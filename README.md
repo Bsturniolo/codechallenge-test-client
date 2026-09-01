@@ -1,72 +1,104 @@
-# codechallenge-test-client
+# 🐍 Snake Challenge Bot
 
-A minimal **bot client** for [The Code Challenge](https://codechallenge.up.railway.app).
-It connects to the match server over a websocket using your bot's token,
-auto-accepts challenges, and plays. Use it as a starting point (and a smoke
-test) for writing your own bot.
+Bot en Python que juega automáticamente al desafío de Snake multijugador vía WebSocket, para la actividad de la facultad.
 
-## How it works
+## ¿Qué hace?
 
-Your bot authenticates with its **token** (from **My Bots** on the web) and
-opens a websocket to the server:
+Se conecta al servidor del challenge, acepta desafíos automáticamente, y en cada turno decide su movimiento (`up`/`down`/`left`/`right`) usando una estrategia con tres capas:
 
-```
-wss://codechallenge-server.up.railway.app/ws?token=<YOUR_BOT_TOKEN>   # production
-ws://localhost:5000/ws?token=<YOUR_BOT_TOKEN>                          # local
-```
+1. **Busca comida de forma inteligente**: evalúa varias de las manzanas más cercanas (no solo la primera que encuentra) y descarta las que están en zonas peligrosas.
+2. **Evita quedarse encerrado**: antes de moverse, calcula (con flood-fill) si el espacio disponible detrás de ese paso alcanza para el largo de su propio cuerpo. Si no alcanza, descarta esa opción.
+3. **Controla territorio**: compara, celda por celda, quién del tablero (nosotros o el rival) llega primero a cada zona libre (heurística tipo Voronoi), y prioriza los movimientos que dejan más espacio bajo nuestro control — esto lo hace jugar mejor a largo plazo, no solo perseguir la comida más cercana.
+4. **Esquiva choques de cabeza**: si el rival es igual o más largo y está a un paso de distancia, evita esa celda.
 
-The server then sends events and the bot replies with actions (JSON):
+## Archivos
 
-| Event          | The bot does…                                                        |
-| -------------- | -------------------------------------------------------------------- |
-| `list_users`   | nothing (just who's online)                                          |
-| `challenge`    | replies `accept_challenge` with the `challenge_id`                   |
-| `your_turn`    | plays a move — replies `move` with the move data + the `turn_token`  |
-| `game_over`    | nothing (the match ended)                                            |
+| Archivo | Qué es |
+|---|---|
+| `run.py` | El bot. Se conecta al servidor y juega. |
+| `test_run.py` | Suite de tests offline (no se conecta a nada) que verifica la lógica de decisión contra tableros armados a mano. |
 
-> The example move logic in `run.py` plays **Connect 4** (it picks a random
-> column). That `process_your_turn` / `process_move` part is exactly where you
-> put your own strategy — and where you adapt it to another game's action shape.
+## Requisitos
 
-## Requirements
-
-- Python 3.9+
-- `websockets` (see `requirements.txt`)
-
-## Run
+- Python 3.10+
+- [`websockets`](https://pypi.org/project/websockets/)
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python run.py <YOUR_BOT_TOKEN>
+pip install websockets
 ```
 
-Get `<YOUR_BOT_TOKEN>` from **My Bots** in the web app. By default `run.py`
-connects to the production server; switch the `uri` in `run.py` to the
-`localhost` line to play against a local server.
+## Uso
 
-> `start.sh` / `start_dev.sh` are convenience runners kept out of git because
-> they may embed your personal token.
-
-## Game logs
-
-When a match ends, the client writes a **`game_<game_id>.log`** in the working
-directory with everything that happened: each event received (`<`) and action
-sent (`>`), as JSON, ending with the `game_over` event. Useful for replaying or
-debugging a match. These files are git-ignored.
-
-```
-< {"event": "your_turn", "data": {"board": "...", "game_id": "g_9f", "turn_token": "t_01", ...}}
-> {"action": "move", "data": {"game_id": "g_9f", "turn_token": "t_01", "col": 3}}
-...
-< {"event": "game_over", "data": {"board": "...", "game_id": "g_9f", ...}}
+```bash
+python3 run.py <tu_auth_token>
 ```
 
-## Write your own bot
+El bot se conecta, acepta cualquier desafío que le llegue, y juega solo. Al terminar cada partida guarda un log completo (eventos recibidos y jugadas mandadas) en `game_<game_id>.log`, útil para revisar qué pasó turno a turno.
 
-You don't need this client — any websocket client works. The contract is:
+### Servidor
 
-1. Connect to `ws(s)://<server>/ws?token=<your bot token>`.
-2. On `challenge`, send `{"action": "accept_challenge", "data": {"challenge_id": "..."}}`.
-3. On `your_turn`, read `data` (board / game state, `game_id`, `turn_token`) and
-   send your move: `{"action": "move", "data": { ... , "turn_token": "..." }}`.
+```
+wss://server.codechallenge.net.ar/ws?token=<auth_token>
+```
+
+Si esta URL cambia (la cátedra a veces migra el servidor), actualizala en la variable `uri` dentro de `start()` en `run.py`.
+
+## Tests
+
+`test_run.py` corre offline: prueba las funciones de decisión (parseo del tablero, detección de callejones sin salida, cálculo de territorio, etc.) contra tableros de ejemplo, sin necesidad de conexión.
+
+```bash
+python3 test_run.py
+```
+
+Salida esperada:
+
+```
+Ran 10 tests in 0.00Xs
+
+OK
+```
+
+Si algo falla, el traceback indica exactamente qué escenario no se comporta como se espera — útil para revisar antes de arriesgar puntos en una partida real.
+
+## Protocolo (formato de mensajes)
+
+El tablero llega como un string con `|` en los bordes de cada fila:
+
+```
+|*              |
+|aaA            |
+|               |
+```
+
+| Símbolo | Significado |
+|---|---|
+| `A` / `a` | Cabeza / cuerpo de **nuestra** serpiente |
+| `B` / `b` | Cabeza / cuerpo de la serpiente **rival** |
+| `*` | Comida |
+| ` ` | Celda vacía |
+
+El movimiento se manda como:
+
+```json
+{
+  "action": "move",
+  "data": {
+    "game_id": "...",
+    "turn_token": "...",
+    "direction": "up"
+  }
+}
+```
+
+> **Nota:** el campo `direction` con valores `up`/`down`/`left`/`right` es la convención que confirmamos funcionando en partidas reales del challenge.
+
+## Posibles mejoras futuras
+
+- Simulación de varios turnos hacia adelante (lookahead) en vez de solo el siguiente paso.
+- Estrategia agresiva: cortarle el paso al rival en vez de solo evitarlo.
+- Ajustar heurísticas según el tamaño del tablero o la cantidad de comida disponible.
+
+## Créditos
+
+Armado para la actividad de programación de bots de la facultad. Estrategia y tests desarrollados iterativamente probando contra partidas reales del challenge.
