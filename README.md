@@ -4,19 +4,20 @@ Bot en Python que juega automáticamente al desafío de Snake multijugador vía 
 
 ## ¿Qué hace?
 
-Se conecta al servidor del challenge, acepta desafíos automáticamente, y en cada turno decide su movimiento (`up`/`down`/`left`/`right`) usando una estrategia con tres capas:
+Se conecta al servidor del challenge, acepta desafíos automáticamente, y en cada turno decide su movimiento (`up`/`down`/`left`/`right`). La estrategia, en orden de prioridad:
 
-1. **Busca comida de forma inteligente**: evalúa varias de las manzanas más cercanas (no solo la primera que encuentra) y descarta las que están en zonas peligrosas.
-2. **Evita quedarse encerrado**: antes de moverse, calcula (con flood-fill) si el espacio disponible detrás de ese paso alcanza para el largo de su propio cuerpo. Si no alcanza, descarta esa opción.
-3. **Controla territorio**: compara, celda por celda, quién del tablero (nosotros o el rival) llega primero a cada zona libre (heurística tipo Voronoi), y prioriza los movimientos que dejan más espacio bajo nuestro control — esto lo hace jugar mejor a largo plazo, no solo perseguir la comida más cercana.
-4. **Esquiva choques de cabeza**: si el rival es igual o más largo y está a un paso de distancia, evita esa celda.
+1. **Va por el dígito correcto de la secuencia** (ver [Reglas del juego](#reglas-del-juego-resumen) abajo), evaluando las 4 direcciones inmediatas que lleven hacia él y descartando las que terminan en una trampa, usando un chequeo de seguridad de **varios pasos hacia adelante** (no solo el siguiente casillero) para detectar si nos estamos por enroscar solos en una esquina.
+2. Si el dígito correcto no está en el tablero todavía, o no se puede llegar con seguridad: **va a buscar una `X`** (multiplicador permanente) si hay una alcanzable — es ganancia gratis, ya que de todos modos no íbamos a comer nada ese turno.
+3. Si tampoco hay una `X` segura: **maximiza territorio** (heurística tipo Voronoi) comparando, celda por celda, quién llega primero — nosotros o el rival — para sobrevivir el mayor tiempo posible y quedar mejor posicionado.
+4. En cualquiera de los pasos anteriores, **evita meterse al lado de la cabeza del rival** si es estrictamente más largo que nosotros (un choque que perderíamos seguro). Si es igual o más corto, no se desvía por eso — la velocidad importa más que una cautela excesiva en un juego que es, en el fondo, una carrera.
+5. Como último recurso, si está completamente acorralado, igual manda un movimiento legal en vez de trabarse.
 
 ## Archivos
 
 | Archivo | Qué es |
 |---|---|
 | `run.py` | El bot. Se conecta al servidor y juega. |
-| `test_run.py` | Suite de tests offline (no se conecta a nada) que verifica la lógica de decisión contra tableros armados a mano. |
+| `test_run.py` | Suite de tests offline (no se conecta a nada) que verifica la lógica de decisión contra tableros armados a mano, y contra un replay de una partida real. |
 
 ## Requisitos
 
@@ -41,11 +42,11 @@ El bot se conecta, acepta cualquier desafío que le llegue, y juega solo. Al ter
 wss://server.codechallenge.net.ar/ws?token=<auth_token>
 ```
 
-Si esta URL cambia (la cátedra a veces migra el servidor), actualizala en la variable `uri` dentro de `start()` en `run.py`.
+Si esta URL cambia (la cátedra a veces migra el servidor), actualizala en la variable `uri` dentro de `start()` en `run.py`. Un error `HTTP 404` al conectar (`InvalidStatusCode`) es la señal de que esto pasó — no es un bug del bot.
 
 ## Tests
 
-`test_run.py` corre offline: prueba las funciones de decisión (parseo del tablero, detección de callejones sin salida, cálculo de territorio, etc.) contra tableros de ejemplo, sin necesidad de conexión.
+`test_run.py` corre offline: prueba las funciones de decisión (parseo del tablero, detección de callejones sin salida, tracking de la secuencia de dígitos, manejo de la `X`, etc.) contra tableros y datos de ejemplo, sin necesidad de conexión.
 
 ```bash
 python3 test_run.py
@@ -54,12 +55,24 @@ python3 test_run.py
 Salida esperada:
 
 ```
-Ran 10 tests in 0.00Xs
+Ran 24 tests in 0.0Xs
 
 OK
 ```
 
-Si algo falla, el traceback indica exactamente qué escenario no se comporta como se espera — útil para revisar antes de arriesgar puntos en una partida real.
+Uno de los tests (`test_replays_real_match_log_and_tracks_correctly`) reproduce el `score_1`/`score_2` real de una partida jugada en torneo para confirmar que el tracker de la secuencia de dígitos se mantiene sincronizado turno a turno — es la mejor defensa contra que se rompa de nuevo silenciosamente.
+
+## Reglas del juego (resumen)
+
+El juego fue cambiando de versión con el tiempo. Esto es lo que sabemos confirmado de cada una:
+
+- **v1** (tablero fijo 15×15): comida = `*`, cualquiera vale.
+- **v2** (2 sep 2026): el tablero varía de tamaño por partida (12–20 por lado, no necesariamente cuadrado). El bot **no depende de ningún campo del mensaje** para esto — calcula filas/columnas directo del tablero recibido, así que es inmune a que cambien el nombre del campo.
+- **v3** (9 sep 2026): la comida son dígitos `1`-`9`. Hay que comerlos en orden ascendente cíclico (`...7,8,9,1,2...`). El dígito correcto suma `dígito × 100`; cualquier otro dígito resta 500.
+  - ⚠️ **Importante, confirmado con partidas reales**: la secuencia es **global**, compartida entre los dos jugadores — no es "tu propio contador". Si el rival come el dígito correcto, la secuencia avanza igual que si lo hubiéramos comido nosotros. El bot sincroniza su propio contador mirando `score_1` y `score_2` (que vienen en todos los mensajes) en vez de asumir que solo nuestras propias comidas cuentan.
+- **v4** (16 sep 2026): se suman dos celdas `X` al tablero. Comer una da +50 (fijo, no se multiplica) y sube un multiplicador permanente (x2, x3, x4...) que escala los puntos de comida (`dígito × 100 × multiplicador`). Cada jugador tiene su propio multiplicador. La `X` es segura para pisar (no choca, no hace crecer) y **no hace falta tratarla como obstáculo**. Los valores de multiplicador vienen en los campos `multiplier_1`/`multiplier_2` de `turn_data` (es el único dato de esta regla que no se puede leer directo del tablero).
+
+Si la cátedra anuncia una v5 o cambia algo de esto, lo mejor es pasarle a Claude el anuncio de la regla tal cual (copiado, no resumido) y el primer log de una partida jugada con la regla nueva — así se puede confirmar el comportamiento real en vez de adivinar.
 
 ## Protocolo (formato de mensajes)
 
@@ -75,7 +88,8 @@ El tablero llega como un string con `|` en los bordes de cada fila:
 |---|---|
 | `A` / `a` | Cabeza / cuerpo de **nuestra** serpiente |
 | `B` / `b` | Cabeza / cuerpo de la serpiente **rival** |
-| `*` | Comida |
+| `1`-`9` | Comida (desde v3) — solo el dígito correcto de la secuencia suma puntos |
+| `X` | Multiplicador permanente (desde v4) — siempre segura para pisar |
 | ` ` | Celda vacía |
 
 El movimiento se manda como:
@@ -95,10 +109,10 @@ El movimiento se manda como:
 
 ## Posibles mejoras futuras
 
-- Simulación de varios turnos hacia adelante (lookahead) en vez de solo el siguiente paso.
+- Lookahead más profundo (ya cubre varios pasos para detectar auto-encierro; se podría extender a simular turnos completos del rival también).
 - Estrategia agresiva: cortarle el paso al rival en vez de solo evitarlo.
-- Ajustar heurísticas según el tamaño del tablero o la cantidad de comida disponible.
+- Usar el multiplicador propio/rival (`multiplier_1`/`multiplier_2`) para decidir cuándo vale la pena desviarse a buscar una `X` vs. ir directo por el dígito (por ejemplo, ser menos agresivo por la `X` una vez que el multiplicador ya es alto, porque el valor marginal baja).
 
 ## Créditos
 
-Armado para la actividad de programación de bots de la facultad. Estrategia y tests desarrollados iterativamente probando contra partidas reales del challenge.
+Armado para la actividad de programación de bots de la facultad. Estrategia y tests desarrollados iterativamente, ajustando con datos de partidas reales (incluyendo un torneo) en vez de solo a partir de la letra de las reglas.

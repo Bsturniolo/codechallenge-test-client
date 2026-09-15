@@ -79,6 +79,7 @@ async def play(websocket):
                 if game_id:
                     log_event(game_id, request_data)
                     write_game_log(game_id)
+                    DIGIT_STATE.pop(game_id, None)
             if request_data['event'] == 'challenge':
                 # if request_data['data']['opponent'] == 'favoriteopponent':
                 await send(
@@ -113,6 +114,16 @@ DIRS = {
     'right': (0, 1),
 }
 
+# v4 (16 Sep 2026): the board now also has two 'X' cells -- eating one
+# gives +50 (flat, not multiplied) and permanently bumps your own score
+# multiplier a notch (x2, x3, x4...), which then scales digit catches
+# (digit*100*multiplier). It's always safe to step on (doesn't collide,
+# doesn't grow you), so it needs no special entry in any 'blocked' set --
+# it's already passable by default since only chars explicitly listed
+# in a blocked set stop movement. We do actively route to it when it's
+# free value (see choose_direction step 1b below).
+MULTIPLIER_CHAR = 'X'
+
 
 def parse_board(board_str):
     """Turn the raw '|aaA   |\n...' string into a 2D list of chars
@@ -146,7 +157,12 @@ def bfs_paths_to_foods(grid, rows, cols, head, blocked, max_targets=6):
     """Like bfs_path_to_food, but instead of stopping at the first food
     found, keeps collecting food targets in increasing distance order
     (up to max_targets). This lets us skip a nearest food that turns out
-    to be a trap and try the next-closest one instead of giving up."""
+    to be a trap and try the next-closest one instead of giving up.
+
+    NOTE: kept for v1-style boards where food is '*'. Since v3, food is
+    digits and process_snake_move uses bfs_path_to_char() instead (see
+    below) -- this is left in only as a fallback in case a match somehow
+    still uses the old '*' food marker."""
     visited = {head}
     queue = deque([(head, [])])
     results = []
@@ -167,12 +183,42 @@ def bfs_paths_to_foods(grid, rows, cols, head, blocked, max_targets=6):
     return results
 
 
-def flood_fill_area(grid, rows, cols, start, blocked, cap):
+def bfs_path_to_char(grid, rows, cols, head, blocked, target_char):
+    """Shortest path (list of direction names) from head to the nearest
+    cell containing `target_char`, avoiding blocked cells. Returns None
+    if no such cell is reachable."""
+    visited = {head}
+    queue = deque([(head, [])])
+    while queue:
+        (r, c), path = queue.popleft()
+        if grid[r][c] == target_char and path:
+            return path
+        for name, (dr, dc) in DIRS.items():
+            nr, nc = r + dr, c + dc
+            if not in_bounds(nr, nc, rows, cols):
+                continue
+            if (nr, nc) in visited:
+                continue
+            if grid[nr][nc] in blocked:
+                continue
+            visited.add((nr, nc))
+            queue.append(((nr, nc), path + [name]))
+    return None
+
+
+def flood_fill_area(grid, rows, cols, start, blocked, cap, extra_blocked_coords=None):
     """Counts how many free cells are reachable from `start` (BFS over
     open space). Used to detect dead ends / pockets that are too small
     for our own body to fit into safely. `cap` stops the search early
-    once we know the area is 'big enough', to keep this cheap."""
-    if grid[start[0]][start[1]] in blocked:
+    once we know the area is 'big enough', to keep this cheap.
+
+    `extra_blocked_coords`, if given, is a set of specific (r, c) cells
+    to also treat as blocked -- used to simulate our own body occupying
+    cells further along a planned path (see path_is_safe below), since
+    those cells won't be free anymore by the time we'd actually be
+    standing at `start`."""
+    extra_blocked_coords = extra_blocked_coords or ()
+    if grid[start[0]][start[1]] in blocked or start in extra_blocked_coords:
         return 0
     visited = {start}
     queue = deque([start])
@@ -190,9 +236,39 @@ def flood_fill_area(grid, rows, cols, start, blocked, cap):
                 continue
             if grid[nr][nc] in blocked:
                 continue
+            if (nr, nc) in extra_blocked_coords:
+                continue
             visited.add((nr, nc))
             queue.append((nr, nc))
     return count
+
+
+def path_is_safe(grid, rows, cols, head, path, lookahead_blocked, own_length, depth=3):
+    """Multi-step lookahead dead-end check. A single-step flood fill can
+    be fooled: the immediate next cell might open into a big room, but
+    a few steps further down the SAME path our own body (which keeps
+    growing behind us as we walk) can pinch that room down to nothing --
+    the classic 'coiled into a corner' trap.
+
+    This always evaluates safety at the path's TRUE final destination
+    (not some arbitrary earlier point), since the actual risk is "can I
+    still move once I arrive". Only the last `depth` cells travelled
+    before that point are treated as freshly-occupied body (our own
+    tail will have had time to shift out of older, farther-back path
+    cells by the time we get here, so we don't pessimistically block
+    those)."""
+    pos = head
+    trail = []
+    for name in path:
+        dr, dc = DIRS[name]
+        pos = (pos[0] + dr, pos[1] + dc)
+        trail.append(pos)
+    passed_through = set(trail[:-1][-depth:]) if len(trail) > 1 else set()
+    area = flood_fill_area(
+        grid, rows, cols, pos, lookahead_blocked,
+        cap=own_length + 1, extra_blocked_coords=passed_through,
+    )
+    return area >= own_length
 
 
 def bfs_distances_from(grid, rows, cols, source, blocked):
@@ -232,20 +308,35 @@ def territory_score(grid, rows, cols, my_pos, opp_pos, blocked):
 
 
 def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
-                      opp_head_char, opp_body_char):
-    """Decide the next move:
-    1. Look at several of the nearest foods (not just the closest one).
-    2. Skip any whose first step leads into a pocket smaller than our
-       own body (avoids getting trapped) or right next to a rival that's
-       the same size or bigger (avoids a head-to-head we'd likely lose).
-    3. Among the safe candidates, go for the closest food; ties are
-       broken by whichever step gives us more board territory (Voronoi
-       score) and, after that, more distance from the rival's head.
-    4. If no food is safely reachable at all, fall back to whichever
-       adjacent cell gives the most territory / open space (survive as
-       long as possible and out-maneuver the rival).
+                      opp_head_char, opp_body_char, target_digit):
+    """Decide the next move.
+
+    v3 rules: food is now digits 1-9. Only the correct next digit in the
+    ascending cyclic sequence (target_digit) is safe to eat -- any other
+    digit costs -500 points. So we:
+
+    1. Treat every digit that ISN'T target_digit as an obstacle, exactly
+       like a snake body -- we should never walk onto it, whether or not
+       it's on our way somewhere.
+    2. Try every immediate direction that leads toward the correct
+       digit, using a multi-step lookahead (not just the next cell) to
+       skip any that would coil us into a dead end, and skipping moves
+       right next to a rival that's the same size or bigger (risky
+       head-to-head). Among the safe ones, take the shortest.
+    3. If target_digit isn't reachable safely (or isn't on the board
+       yet), fall back to whichever open, non-digit cell gives the most
+       territory / space, same as before -- survive and wait for it to
+       appear rather than risk a wrong digit.
+
+    Returns (direction, target_cell) where target_cell is the actual
+    digit cell we're ultimately routing to (or None if we're just
+    playing it safe with no specific target this turn). The caller uses
+    target_cell to detect, next turn, whether we actually arrived there.
     """
-    blocked = {own_body_char, opp_body_char, opp_head_char}
+    target_char = str(target_digit)
+    wrong_digits = DIGIT_CHARS - {target_char}
+
+    blocked = {own_body_char, opp_body_char, opp_head_char} | wrong_digits
     # For "what happens after I take this step" lookahead (dead-end and
     # territory checks), our current head cell must count as blocked too:
     # next turn it becomes part of our body, so a candidate move can't
@@ -259,44 +350,79 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
         if not opp_head:
             return False
         dist = abs(nr - opp_head[0]) + abs(nc - opp_head[1])
-        return dist <= 1 and opp_length >= own_length
+        # Only bail out when the rival is STRICTLY longer than us (a
+        # collision we'd clearly lose). If we're equal or longer, the
+        # risk is acceptable given how much speed matters in this
+        # digit-racing format -- being overly cautious here just loses
+        # races to the rival reaching food first.
+        return dist <= 1 and opp_length > own_length
 
     def step_area(nr, nc):
-        # cap the flood fill at "own_length + a small margin" -- we only
-        # need to know if the pocket is big enough, not its exact size.
-        return flood_fill_area(grid, rows, cols, (nr, nc), lookahead_blocked, cap=own_length + 5)
+        # cap the flood fill right above own_length -- we only need to
+        # know the pocket is big enough, not its exact size, so there's
+        # no benefit to a bigger cap.
+        return flood_fill_area(grid, rows, cols, (nr, nc), lookahead_blocked, cap=own_length + 1)
 
     def step_territory(nr, nc):
         return territory_score(grid, rows, cols, (nr, nc), opp_head, lookahead_blocked)
 
-    # 1) Gather several of the nearest foods and keep only the safe ones.
-    food_paths = bfs_paths_to_foods(grid, rows, cols, head, blocked, max_targets=6)
-    safe_candidates = []  # (path_length, -territory, name, nr, nc)
-    for path in food_paths:
-        name = path[0]
-        dr, dc = DIRS[name]
+    # 1) Try to reach the correct digit. Rather than computing only the
+    # single shortest path and giving up on the target entirely if that
+    # one path looks unsafe, we check all 4 immediate directions that
+    # still lead somewhere toward the target and take the shortest one
+    # that passes a multi-step lookahead safety check (path_is_safe) --
+    # this catches self-coiling traps a single-step check would miss,
+    # while committing to the target more often than bailing out to the
+    # open-space fallback the first time the single shortest route looks
+    # borderline.
+    candidates = []
+    for name, (dr, dc) in DIRS.items():
         nr, nc = head[0] + dr, head[1] + dc
         if not in_bounds(nr, nc, rows, cols) or grid[nr][nc] in blocked:
             continue
         if risky_head_on(nr, nc):
             continue
-        if step_area(nr, nc) < own_length:
+        if grid[nr][nc] == target_char:
+            sub_path = []
+        else:
+            sub_path = bfs_path_to_char(grid, rows, cols, (nr, nc), blocked, target_char)
+            if sub_path is None:
+                continue  # this direction doesn't lead to the target at all
+        full_path = [name] + sub_path
+        if not path_is_safe(grid, rows, cols, head, full_path, lookahead_blocked, own_length):
             continue
-        safe_candidates.append((len(path), -step_territory(nr, nc), name, nr, nc))
+        candidates.append((len(full_path), name, full_path))
 
-    if safe_candidates:
-        safe_candidates.sort()  # shortest path first, more territory as tie-break
-        best_len = safe_candidates[0][0]
-        tied = [c for c in safe_candidates if c[0] == best_len]
-        best_terr = min(c[1] for c in tied)  # most negative = most territory
-        tied = [c for c in tied if c[1] == best_terr]
-        if len(tied) > 1 and opp_head:
-            tied.sort(key=lambda c: -(abs(c[3] - opp_head[0]) + abs(c[4] - opp_head[1])))
-        return tied[0][2]
+    if candidates:
+        candidates.sort(key=lambda c: c[0])
+        _, name, full_path = candidates[0]
+        r, c = head
+        for step_name in full_path:
+            pdr, pdc = DIRS[step_name]
+            r, c = r + pdr, c + pdc
+        return name, (r, c)
 
-    # 2) No food is safely reachable: pick whichever legal adjacent move
-    # gives the most territory (falls back to open space if no rival),
-    # skipping risky head-to-head cells.
+    # 1b) The correct digit isn't safely reachable right now (not on the
+    # board yet, or only reachable through a trap). Rather than jump
+    # straight to pure territory maximization, check if an 'X' (permanent
+    # score multiplier) is safely reachable -- since we weren't going to
+    # catch the digit this turn anyway, grabbing a multiplier is free
+    # value with no race time lost.
+    x_path = bfs_path_to_char(grid, rows, cols, head, blocked, MULTIPLIER_CHAR)
+    if x_path and path_is_safe(grid, rows, cols, head, x_path, lookahead_blocked, own_length):
+        name = x_path[0]
+        dr, dc = DIRS[name]
+        nr, nc = head[0] + dr, head[1] + dc
+        if not risky_head_on(nr, nc):
+            r, c = head
+            for step_name in x_path:
+                pdr, pdc = DIRS[step_name]
+                r, c = r + pdr, c + pdc
+            return name, (r, c)
+
+    # 2) Neither the digit nor an X is safely reachable: pick whichever legal adjacent
+    # move gives the most territory / space, skipping risky
+    # head-to-head cells and any wrong digit.
     best_dir, best_score = None, -1
     for name, (dr, dc) in DIRS.items():
         nr, nc = head[0] + dr, head[1] + dc
@@ -308,23 +434,87 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
         if score > best_score:
             best_score, best_dir = score, name
     if best_dir:
-        return best_dir
+        return best_dir, None
 
     # 3) Nothing "safe" left (fully boxed in) -- take any legal move at
-    # all rather than not moving, even if it risks a head-to-head.
+    # all rather than not moving, even if it risks a head-to-head or a
+    # wrong digit (better than certain death standing still).
     for name, (dr, dc) in DIRS.items():
         nr, nc = head[0] + dr, head[1] + dc
         if in_bounds(nr, nc, rows, cols) and grid[nr][nc] not in {own_body_char, opp_body_char}:
-            return name
+            return name, None
 
-    return None  # truly no legal move exists
+    return None, None  # truly no legal move exists
+
+
+# --- v3: digit-sequence food -------------------------------------------
+#
+# Since 9 Sep 2026, food is digits 1-9 instead of '*'. You must eat them
+# in ascending cyclic order (..., 7, 8, 9, 1, 2, ...); the correct digit
+# scores digit*100, any other digit costs -500.
+#
+# CONFIRMED from a real match log: the sequence is GLOBAL / shared
+# between both snakes -- it's not "your own personal count of 1,2,3...".
+# Whoever eats the current correct digit (us OR the rival) advances the
+# *same* shared counter for everyone. In the match we reviewed, we ate
+# '1' and '2' correctly, then the rival ate '3' through '9' (and wrapped
+# to '1', '2'...) while we kept aiming for our own stale local count of
+# '3' -- landing on the wrong digit five times in a row for -500 each.
+#
+# Fix: since every 'your_turn' message includes BOTH players' current
+# scores (score_1 and score_2), we can detect a correct catch by EITHER
+# player just by watching those numbers change turn to turn (+100..+900
+# = digit*100 eaten correctly; -500 = wrong digit; +1 = plain survival,
+# no food eaten) and keep our own 'expected' digit in sync with reality,
+# regardless of who actually ate it.
+DIGIT_CHARS = set('123456789')
+STARTING_DIGIT = 1  # confirmed correct: real matches start expecting '1'
+
+# game_id -> {'expected': int, 'last_score_1': int|None, 'last_score_2': int|None}
+DIGIT_STATE = {}
+
+
+def get_digit_state(game_id):
+    return DIGIT_STATE.setdefault(
+        game_id, {'expected': STARTING_DIGIT, 'last_score_1': None, 'last_score_2': None}
+    )
+
+
+def _digit_from_score_delta(delta):
+    """If a score change looks like a correct digit catch (a clean
+    positive multiple of 100 between 100 and 900), return that digit.
+    Otherwise None (could be +1 survival, -500 wrong catch, or 0)."""
+    if delta is not None and delta > 0 and delta % 100 == 0 and 100 <= delta <= 900:
+        return delta // 100
+    return None
+
+
+def sync_expected_digit(state, score_1, score_2):
+    """Update our belief of the shared 'next correct digit' using
+    whatever score movement happened since the last turn, from EITHER
+    player -- the sequence is shared, so a correct catch by the rival
+    advances it exactly as much as a correct catch by us would.
+
+    Order note: between two of our own turns, our own previous move
+    happens first and the rival's intervening move happens second, so
+    we apply a detected digit from score_2 (us) before score_1 (rival)
+    when both moved in the same window."""
+    if state['last_score_1'] is not None:
+        digit = _digit_from_score_delta(score_2 - state['last_score_2'])
+        if digit is not None:
+            state['expected'] = (digit % 9) + 1
+        digit = _digit_from_score_delta(score_1 - state['last_score_1'])
+        if digit is not None:
+            state['expected'] = (digit % 9) + 1
+    state['last_score_1'] = score_1
+    state['last_score_2'] = score_2
+    return state['expected']
+# -------------------------------------------------------------------------
 
 
 async def process_snake_move(websocket, request_data):
     data = request_data['data']
     board_str = data['board']
-    rows = data['rows']
-    cols = data['cols']
     side = data['side']  # 'A' or 'B' -> that's our head char, lowercase is our body
 
     own_head_char = side
@@ -333,15 +523,38 @@ async def process_snake_move(websocket, request_data):
     opp_body_char = opp_head_char.lower()
 
     grid = parse_board(board_str)
+    # v2: board size now varies per match (12-20 per side, not necessarily
+    # square) and your_turn gained a 'board_size' field. Rather than trust
+    # any particular field name (which may keep changing), we derive the
+    # real dimensions straight from the parsed board itself -- this works
+    # no matter what the server calls the size field, or whether it even
+    # sends one.
+    rows = len(grid)
+    cols = len(grid[0]) if grid else 0
     print(board_str)
 
+    # v4: score multiplier per player, confirmed not derivable from the
+    # board itself -- has to come from these fields. Confirmed from real
+    # match logs that player_1 <-> side 'A' and player_2 <-> side 'B'
+    # consistently, so we map it the same way as score_1/score_2.
+    own_multiplier = data.get('multiplier_1') if side == 'A' else data.get('multiplier_2')
+    opp_multiplier = data.get('multiplier_2') if side == 'A' else data.get('multiplier_1')
+    if own_multiplier is not None:
+        print('multiplier: us={} rival={}'.format(own_multiplier, opp_multiplier))
+
     head = find_char(grid, own_head_char)
+
+    state = get_digit_state(data['game_id'])
+    sync_expected_digit(state, data.get('score_1'), data.get('score_2'))
+
     direction = None
     if head:
-        direction = choose_direction(
+        direction, _target_pos = choose_direction(
             grid, rows, cols, head,
             own_head_char, own_body_char, opp_head_char, opp_body_char,
+            state['expected'],
         )
+
     if direction is None:
         direction = choice(list(DIRS.keys()))  # last resort, shouldn't normally happen
 
