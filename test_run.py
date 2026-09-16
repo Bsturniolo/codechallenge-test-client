@@ -312,6 +312,42 @@ class TestChooseDirection(unittest.TestCase):
         )
         self.assertEqual(direction, 'right')  # va derecho, sin rodear la X
 
+    def test_still_pursues_a_contested_digit_when_its_the_only_option(self):
+        # Basado en una derrota real: el rival está mucho más cerca del
+        # dígito que nosotros (nos ganaría la carrera y podría
+        # cerrarnos el paso), pero es la ÚNICA comida en el tablero y el
+        # único camino disponible -- no quedarse quieto es mejor que la
+        # alternativa (no hay alternativa).
+        H, W = 5, 15
+        grid = [[' '] * W for _ in range(H)]
+        grid[2][0] = 'A'
+        grid[2][12] = 'B'  # rival mucho más cerca del objetivo
+        grid[2][13] = 'b'
+        grid[2][10] = '1'
+        head = run.find_char(grid, 'A')
+        direction, target = run.choose_direction(
+            grid, H, W, head, 'A', 'a', 'B', 'b', target_digit=1
+        )
+        self.assertEqual(direction, 'right')
+        self.assertEqual(target, (2, 10))
+
+    def test_pursues_digit_normally_when_race_is_not_contested(self):
+        # Cuando el rival está lejos y no hay riesgo real de carrera, el
+        # comportamiento tiene que seguir siendo el de siempre: ir
+        # directo por el dígito correcto.
+        H, W = 5, 15
+        grid = [[' '] * W for _ in range(H)]
+        grid[2][0] = 'A'
+        grid[2][3] = '1'
+        grid[2][13] = 'B'  # rival lejos, sin chance de disputar esta celda
+        grid[2][14] = 'b'
+        head = run.find_char(grid, 'A')
+        direction, target = run.choose_direction(
+            grid, H, W, head, 'A', 'a', 'B', 'b', target_digit=1
+        )
+        self.assertEqual(direction, 'right')
+        self.assertEqual(target, (2, 3))
+
     def test_goes_for_x_when_target_digit_not_safely_reachable(self):
         # v4: si el dígito correcto no está en el tablero todavía (o no
         # es alcanzable con seguridad), conviene ir a buscar la X en vez

@@ -6,7 +6,7 @@ Bot en Python que juega automáticamente al desafío de Snake multijugador vía 
 
 Se conecta al servidor del challenge, acepta desafíos automáticamente, y en cada turno decide su movimiento (`up`/`down`/`left`/`right`). La estrategia, en orden de prioridad:
 
-1. **Va por el dígito correcto de la secuencia** (ver [Reglas del juego](#reglas-del-juego-resumen) abajo), evaluando las 4 direcciones inmediatas que lleven hacia él y descartando las que terminan en una trampa, usando un chequeo de seguridad de **varios pasos hacia adelante** (no solo el siguiente casillero) para detectar si nos estamos por enroscar solos en una esquina.
+1. **Va por el dígito correcto de la secuencia** (ver [Reglas del juego](#reglas-del-juego-resumen) abajo), evaluando las 4 direcciones inmediatas que lleven hacia él y descartando las que terminan en una trampa, usando un chequeo de seguridad de **varios pasos hacia adelante** (no solo el siguiente casillero) para detectar si nos estamos por enroscar solos en una esquina. Además, si el rival puede llegar a esa misma celda **antes o al mismo tiempo que nosotros**, la tratamos como "disputada" y preferimos otra ruta si hay una libre — eso es justo lo que nos dejó encerrados en una partida real: el destino tenía espacio de sobra, pero el rival llegó primero y nos cerró el paso.
 2. Si el dígito correcto no está en el tablero todavía, o no se puede llegar con seguridad: **va a buscar una `X`** (multiplicador permanente) si hay una alcanzable — es ganancia gratis, ya que de todos modos no íbamos a comer nada ese turno.
 3. Si tampoco hay una `X` segura: **maximiza territorio** (heurística tipo Voronoi) comparando, celda por celda, quién llega primero — nosotros o el rival — para sobrevivir el mayor tiempo posible y quedar mejor posicionado.
 4. En cualquiera de los pasos anteriores, **evita meterse al lado de la cabeza del rival** si es estrictamente más largo que nosotros (un choque que perderíamos seguro). Si es igual o más corto, no se desvía por eso — la velocidad importa más que una cautela excesiva en un juego que es, en el fondo, una carrera.
@@ -55,7 +55,7 @@ python3 test_run.py
 Salida esperada:
 
 ```
-Ran 24 tests in 0.0Xs
+Ran 26 tests in 0.0Xs
 
 OK
 ```
@@ -109,7 +109,8 @@ El movimiento se manda como:
 
 ## Posibles mejoras futuras
 
-- Lookahead más profundo (ya cubre varios pasos para detectar auto-encierro; se podría extender a simular turnos completos del rival también).
+- Elegir entre **varias ocurrencias** del mismo dígito objetivo (si hay dos '5' en el tablero a la vez) prefiriendo la más segura, no solo evaluar rutas hacia la más cercana. Hoy el chequeo de "carrera disputada" funciona bien cuando hay una sola instancia del dígito, pero no compara instancias distintas entre sí.
+- Simular varios turnos del rival de forma más completa (no solo "cuántos pasos le toma llegar a esta celda", sino su comportamiento probable turno a turno).
 - Estrategia agresiva: cortarle el paso al rival en vez de solo evitarlo.
 - Usar el multiplicador propio/rival (`multiplier_1`/`multiplier_2`) para decidir cuándo vale la pena desviarse a buscar una `X` vs. ir directo por el dígito (por ejemplo, ser menos agresivo por la `X` una vez que el multiplicador ya es alto, porque el valor marginal baja).
 

@@ -206,6 +206,32 @@ def bfs_path_to_char(grid, rows, cols, head, blocked, target_char):
     return None
 
 
+def bfs_path_to_cell(grid, rows, cols, start, blocked, target_cell):
+    """Shortest path (list of direction names) from start to a specific
+    (r, c) coordinate, avoiding blocked cells. Returns [] if start is
+    already target_cell, or None if unreachable."""
+    if start == target_cell:
+        return []
+    visited = {start}
+    queue = deque([(start, [])])
+    while queue:
+        (r, c), path = queue.popleft()
+        for name, (dr, dc) in DIRS.items():
+            nr, nc = r + dr, c + dc
+            if not in_bounds(nr, nc, rows, cols):
+                continue
+            if (nr, nc) in visited:
+                continue
+            if grid[nr][nc] in blocked:
+                continue
+            new_path = path + [name]
+            if (nr, nc) == target_cell:
+                return new_path
+            visited.add((nr, nc))
+            queue.append(((nr, nc), new_path))
+    return None
+
+
 def flood_fill_area(grid, rows, cols, start, blocked, cap, extra_blocked_coords=None):
     """Counts how many free cells are reachable from `start` (BFS over
     open space). Used to detect dead ends / pockets that are too small
@@ -271,9 +297,15 @@ def path_is_safe(grid, rows, cols, head, path, lookahead_blocked, own_length, de
     return area >= own_length
 
 
-def bfs_distances_from(grid, rows, cols, source, blocked):
+def bfs_distances_from(grid, rows, cols, source, blocked, extra_blocked_coords=None):
     """BFS distance from a single source cell to every reachable open
-    cell. Returns a dict {(r, c): distance}."""
+    cell. Returns a dict {(r, c): distance}.
+
+    `extra_blocked_coords`, if given, is a set of specific (r, c) cells
+    to also treat as blocked (used to simulate our own body trail), kept
+    separate from `blocked` since that's a set of board CHARACTERS, not
+    coordinates."""
+    extra_blocked_coords = extra_blocked_coords or ()
     dist = {source: 0}
     queue = deque([source])
     while queue:
@@ -287,18 +319,25 @@ def bfs_distances_from(grid, rows, cols, source, blocked):
                 continue
             if grid[nr][nc] in blocked:
                 continue
+            if (nr, nc) in extra_blocked_coords:
+                continue
             dist[(nr, nc)] = d + 1
             queue.append((nr, nc))
     return dist
 
 
-def territory_score(grid, rows, cols, my_pos, opp_pos, blocked):
+def territory_score(grid, rows, cols, my_pos, opp_pos, blocked, extra_blocked_coords=None):
     """Rough 'Voronoi' territory count: for every open cell, whoever
     reaches it in fewer steps 'controls' it. Returns how many cells we'd
     control from my_pos. A bigger number means more room to maneuver and
     more food we'll likely reach before the rival does -- a much better
-    long-term signal than just distance to the closest food."""
-    my_dist = bfs_distances_from(grid, rows, cols, my_pos, blocked)
+    long-term signal than just distance to the closest food.
+
+    `extra_blocked_coords`, if given, are cells to also treat as blocked
+    for OUR OWN distances only (simulating our own body occupying them by
+    the time we'd be standing at my_pos) -- the rival's distances aren't
+    affected by our body trail."""
+    my_dist = bfs_distances_from(grid, rows, cols, my_pos, blocked, extra_blocked_coords)
     opp_dist = bfs_distances_from(grid, rows, cols, opp_pos, blocked) if opp_pos else {}
     score = 0
     for pos, d in my_dist.items():
@@ -366,6 +405,17 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
     def step_territory(nr, nc):
         return territory_score(grid, rows, cols, (nr, nc), opp_head, lookahead_blocked)
 
+    def opp_distance_to(target_pos):
+        """How many steps the rival needs to reach target_pos, using
+        their own body/our body as obstacles (a reasonable estimate of
+        their movement even without knowing their exact algorithm).
+        None if unreachable for them (or no rival on the board)."""
+        if not opp_head:
+            return None
+        opp_blocked = {own_body_char, opp_body_char, own_head_char}
+        opp_path = bfs_path_to_cell(grid, rows, cols, opp_head, opp_blocked, target_pos)
+        return len(opp_path) if opp_path is not None else None
+
     # 1) Try to reach the correct digit. Rather than computing only the
     # single shortest path and giving up on the target entirely if that
     # one path looks unsafe, we check all 4 immediate directions that
@@ -375,7 +425,16 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
     # while committing to the target more often than bailing out to the
     # open-space fallback the first time the single shortest route looks
     # borderline.
-    candidates = []
+    #
+    # Among the safe candidates, we also avoid ones where the rival can
+    # reach that exact same cell at least as fast as us: that's exactly
+    # how we ended up boxed in in real matches -- the destination looked
+    # spacious, but the rival got there around the same time and sealed
+    # off the room before we could use it. We only fall back to a
+    # contested candidate if it's the only option, since standing still
+    # doing nothing isn't available either.
+    candidates = []       # ones where we clearly win the race
+    contested = []        # rival ties or beats us there -- last resort only
     for name, (dr, dc) in DIRS.items():
         nr, nc = head[0] + dr, head[1] + dc
         if not in_bounds(nr, nc, rows, cols) or grid[nr][nc] in blocked:
@@ -391,16 +450,22 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
         full_path = [name] + sub_path
         if not path_is_safe(grid, rows, cols, head, full_path, lookahead_blocked, own_length):
             continue
-        candidates.append((len(full_path), name, full_path))
-
-    if candidates:
-        candidates.sort(key=lambda c: c[0])
-        _, name, full_path = candidates[0]
         r, c = head
         for step_name in full_path:
             pdr, pdc = DIRS[step_name]
             r, c = r + pdr, c + pdc
-        return name, (r, c)
+        entry = (len(full_path), name, full_path, (r, c))
+        opp_dist = opp_distance_to((r, c))
+        if opp_dist is not None and opp_dist <= len(full_path):
+            contested.append(entry)
+        else:
+            candidates.append(entry)
+
+    for pool in (candidates, contested):
+        if pool:
+            pool.sort(key=lambda c: c[0])
+            _, name, full_path, target_pos = pool[0]
+            return name, target_pos
 
     # 1b) The correct digit isn't safely reachable right now (not on the
     # board yet, or only reachable through a trap). Rather than jump
@@ -418,7 +483,11 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
             for step_name in x_path:
                 pdr, pdc = DIRS[step_name]
                 r, c = r + pdr, c + pdc
-            return name, (r, c)
+            x_opp_dist = opp_distance_to((r, c))
+            # Only worth it if we're not walking into a contested cell --
+            # +50 isn't worth risking a trap for.
+            if x_opp_dist is None or x_opp_dist > len(x_path):
+                return name, (r, c)
 
     # 2) Neither the digit nor an X is safely reachable: pick whichever legal adjacent
     # move gives the most territory / space, skipping risky
