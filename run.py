@@ -79,7 +79,6 @@ async def play(websocket):
                 if game_id:
                     log_event(game_id, request_data)
                     write_game_log(game_id)
-                    DIGIT_STATE.pop(game_id, None)
             if request_data['event'] == 'challenge':
                 # if request_data['data']['opponent'] == 'favoriteopponent':
                 await send(
@@ -559,92 +558,44 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
 # in ascending cyclic order (..., 7, 8, 9, 1, 2, ...); the correct digit
 # scores digit*100, any other digit costs -500.
 #
-# CONFIRMED from a real match log: the sequence is GLOBAL / shared
-# between both snakes -- it's not "your own personal count of 1,2,3...".
-# Whoever eats the current correct digit (us OR the rival) advances the
-# *same* shared counter for everyone. In the match we reviewed, we ate
-# '1' and '2' correctly, then the rival ate '3' through '9' (and wrapped
-# to '1', '2'...) while we kept aiming for our own stale local count of
-# '3' -- landing on the wrong digit five times in a row for -500 each.
+# CONFIRMED FROM OFFICIAL DOCS ("How to play"): the correct next digit
+# can be read directly off the board every turn -- no state tracking
+# needed at all. The board always holds 5 consecutive digits in the
+# cyclic sequence (e.g. 1,2,3,4,5; once 1 is eaten correctly, 6 appears,
+# leaving 2..6); the correct one is whichever present digit's cyclic
+# predecessor (...8,9,1...) is NOT also present on the board.
 #
-# Fix: since every 'your_turn' message includes BOTH players' current
-# scores (score_1 and score_2), we can detect a correct catch by EITHER
-# player just by watching those numbers change turn to turn and keep our
-# own 'expected' digit in sync with reality, regardless of who actually
-# ate it.
-#
-# v4 UPDATE (16 Sep 2026): a correct catch is now digit*100*multiplier,
-# not just digit*100 -- the permanent per-player multiplier from eating
-# 'X' cells scales it. A second real match log caught this: once the
-# rival's multiplier reached x10, their correct catches were worth up to
-# 9000, which fell way outside the old "100 to 900" detection window, so
-# we silently missed them and desynced again (5 wrong catches that
-# match). Fix: use the multiplier_1/multiplier_2 fields (present in
-# every turn message) to recognize a catch at ANY multiplier, not just
-# x1.
+# This replaces an earlier, more fragile approach that tried to infer
+# the sequence purely from watching score_1/score_2 change turn to
+# turn. That approach worked (validated against real matches) but had a
+# real failure mode: v4's per-player multiplier scales catches
+# (digit*100*multiplier) enough that a catch could be easy to miss or
+# misread if the multiplier value used didn't line up exactly right.
+# Reading the digit straight off the board sidesteps that class of bug
+# entirely -- there's no persistent state to desync, it's recomputed
+# fresh from the ground truth every single turn.
 DIGIT_CHARS = set('123456789')
-STARTING_DIGIT = 1  # confirmed correct: real matches start expecting '1'
-
-# game_id -> {'expected': int, 'last_score_1': int|None, 'last_score_2': int|None,
-#             'last_multiplier_1': int, 'last_multiplier_2': int}
-DIGIT_STATE = {}
+STARTING_DIGIT = 1  # board's own starting layout, kept as a fallback default
 
 
-def get_digit_state(game_id):
-    return DIGIT_STATE.setdefault(
-        game_id, {
-            'expected': STARTING_DIGIT,
-            'last_score_1': None, 'last_score_2': None,
-            'last_multiplier_1': 1, 'last_multiplier_2': 1,
-        }
-    )
-
-
-def _digit_from_score_delta(delta, multiplier):
-    """If a score change looks like a correct digit catch at the given
-    multiplier (a clean positive multiple of 100*multiplier, for a
-    digit 1-9), return that digit. Otherwise None (could be +1
-    survival, +50 an X pickup, -500 wrong catch, or 0)."""
-    multiplier = multiplier or 1
-    unit = 100 * multiplier
-    if delta is not None and delta > 0 and delta % unit == 0:
-        digit = delta // unit
-        if 1 <= digit <= 9:
-            return digit
-    return None
-
-
-def sync_expected_digit(state, score_1, score_2, multiplier_1=1, multiplier_2=1):
-    """Update our belief of the shared 'next correct digit' using
-    whatever score movement happened since the last turn, from EITHER
-    player -- the sequence is shared, so a correct catch by the rival
-    advances it exactly as much as a correct catch by us would.
-
-    Each player's own multiplier (as it was BEFORE this move -- eating a
-    digit doesn't change the multiplier, only eating an 'X' does) is
-    what scales their catch, so we use last turn's recorded multiplier
-    for each player, not this turn's.
-
-    Order note: between two of our own turns, our own previous move
-    happens first and the rival's intervening move happens second, so
-    we apply a detected digit from score_2 (us) before score_1 (rival)
-    when both moved in the same window."""
-    if state['last_score_1'] is not None:
-        digit = _digit_from_score_delta(
-            score_2 - state['last_score_2'], state.get('last_multiplier_2', 1)
-        )
-        if digit is not None:
-            state['expected'] = (digit % 9) + 1
-        digit = _digit_from_score_delta(
-            score_1 - state['last_score_1'], state.get('last_multiplier_1', 1)
-        )
-        if digit is not None:
-            state['expected'] = (digit % 9) + 1
-    state['last_score_1'] = score_1
-    state['last_score_2'] = score_2
-    state['last_multiplier_1'] = multiplier_1 or 1
-    state['last_multiplier_2'] = multiplier_2 or 1
-    return state['expected']
+def determine_target_digit(grid):
+    """Scan the board for every digit present and return the one whose
+    cyclic predecessor (9's predecessor is... no wait, 1's predecessor
+    is 9) is NOT also on the board -- that's the correct one to eat
+    next, straight from the rules. Returns None if the board has no
+    digits at all (shouldn't normally happen -- the rules say 5 are
+    always in play -- but we fall back gracefully if it does)."""
+    present = {int(ch) for row in grid for ch in row if ch in DIGIT_CHARS}
+    if not present:
+        return None
+    for d in present:
+        predecessor = 9 if d == 1 else d - 1
+        if predecessor not in present:
+            return d
+    # Degenerate case (shouldn't happen per the rules: a full 1-9 ring
+    # with no gap has no valid "start"). Fall back to the smallest
+    # present digit rather than crashing.
+    return min(present)
 # -------------------------------------------------------------------------
 
 
@@ -679,19 +630,16 @@ async def process_snake_move(websocket, request_data):
         print('multiplier: us={} rival={}'.format(own_multiplier, opp_multiplier))
 
     head = find_char(grid, own_head_char)
-
-    state = get_digit_state(data['game_id'])
-    sync_expected_digit(
-        state, data.get('score_1'), data.get('score_2'),
-        data.get('multiplier_1', 1), data.get('multiplier_2', 1),
-    )
+    target_digit = determine_target_digit(grid)
+    if target_digit is None:
+        target_digit = STARTING_DIGIT  # no digits on board yet (shouldn't normally happen)
 
     direction = None
     if head:
         direction, _target_pos = choose_direction(
             grid, rows, cols, head,
             own_head_char, own_body_char, opp_head_char, opp_body_char,
-            state['expected'], own_multiplier or 1,
+            target_digit, own_multiplier or 1,
         )
 
     if direction is None:
@@ -700,13 +648,6 @@ async def process_snake_move(websocket, request_data):
     move = {
         'game_id': data['game_id'],
         'turn_token': data['turn_token'],
-        # NOTE: the exact key name the server expects for a snake move is
-        # not confirmed from the sample log (only an old, wrong 'col'
-        # format was seen, which cost -500 points every turn as an
-        # invalid move). 'direction' with up/down/left/right is the most
-        # common convention for this kind of game -- if the server keeps
-        # penalizing every move, check your challenge's protocol docs and
-        # swap this key/values accordingly.
         'direction': direction,
     }
     log_action(move['game_id'], {'action': 'move', 'data': move})

@@ -56,7 +56,7 @@ python3 test_run.py
 Salida esperada:
 
 ```
-Ran 30 tests in 0.0Xs
+Ran 26 tests in 0.0Xs
 
 OK
 ```
@@ -70,12 +70,12 @@ El juego fue cambiando de versión con el tiempo. Esto es lo que sabemos confirm
 - **v1** (tablero fijo 15×15): comida = `*`, cualquiera vale.
 - **v2** (2 sep 2026): el tablero varía de tamaño por partida (12–20 por lado, no necesariamente cuadrado). El bot **no depende de ningún campo del mensaje** para esto — calcula filas/columnas directo del tablero recibido, así que es inmune a que cambien el nombre del campo.
 - **v3** (9 sep 2026): la comida son dígitos `1`-`9`. Hay que comerlos en orden ascendente cíclico (`...7,8,9,1,2...`). El dígito correcto suma `dígito × 100`; cualquier otro dígito resta 500.
-  - ⚠️ **Importante, confirmado con partidas reales**: la secuencia es **global**, compartida entre los dos jugadores — no es "tu propio contador". Si el rival come el dígito correcto, la secuencia avanza igual que si lo hubiéramos comido nosotros. El bot sincroniza su propio contador mirando `score_1` y `score_2` (que vienen en todos los mensajes) en vez de asumir que solo nuestras propias comidas cuentan.
-- **v4** (16 sep 2026): se suman dos celdas `X` al tablero. Comer una da +50 (fijo, no se multiplica) y sube un multiplicador permanente (x2, x3, x4...) que escala los puntos de comida (`dígito × 100 × multiplicador`). Cada jugador tiene su propio multiplicador. La `X` es segura para pisar (no choca, no hace crecer). Los valores de multiplicador vienen en los campos `multiplier_1`/`multiplier_2` de `turn_data`.
-  - ⚠️ **Bug encontrado y arreglado con una partida real**: el tracker del dígito correcto (el de v3) solo reconocía capturas correctas si el salto de puntaje estaba entre 100 y 900 — pero con multiplicador alto, una captura correcta puede valer mucho más (dígito 9 a x10 = 9000). Esos saltos grandes no se reconocían, el tracker se desincronizaba, y ahí empezábamos a fallar en cadena. Ahora el tracker usa `multiplier_1`/`multiplier_2` para reconocer una captura correcta a cualquier multiplicador.
+  - ✅ **Confirmado con la documentación oficial del juego** ("How to play"): el tablero siempre tiene 5 dígitos consecutivos de la secuencia en juego a la vez, y el correcto es el que está en el tablero cuyo predecesor cíclico (`...8,9,1...`) NO está también presente. Esto se puede leer directo del tablero cada turno — el bot ya NO necesita rastrear el puntaje para saber cuál es el dígito correcto, lo lee fresco cada vez con `determine_target_digit()`. Esto reemplazó un sistema anterior (basado en mirar cómo cambiaba `score_1`/`score_2`) que funcionaba pero era más frágil: con el multiplicador de v4 activo, una captura correcta podía valer mucho más de lo esperado y el sistema viejo la perdía de vista. Leer directo del tablero no tiene ningún estado que se pueda desincronizar.
+  - La secuencia es **global**, compartida entre los dos jugadores — si el rival come el dígito correcto, el tablero se actualiza para todos (aparece el próximo dígito), así que la lectura del tablero siempre refleja el estado real sin importar quién comió qué.
+- **v4** (16 sep 2026): se suman dos celdas `X` al tablero. Comer una da +50 (fijo, no se multiplica) y sube un multiplicador permanente (x2, x3, x4...) que escala los puntos de comida (`dígito × 100 × multiplicador`). Cada jugador tiene su propio multiplicador. La `X` es segura para pisar (no choca, no hace crecer). Los valores de multiplicador vienen en los campos `multiplier_1`/`multiplier_2` de `turn_data` — es el único dato de esta regla que no se puede leer directo del tablero.
   - 💡 **Estrategia confirmada con partida real**: conviene juntar multiplicador ANTES de cazar dígitos, no al revés. Vimos a un rival comer 10 `X` seguidas al principio (llegando a x10) y recién ahí empezar a cazar dígitos — terminó 33.432 a 284. El bot ahora prioriza ir por una `X` segura mientras el propio multiplicador es bajo (por debajo de `MULTIPLIER_ACCUMULATION_CAP`, hoy en 8), y recién después empieza a priorizar el dígito correcto.
 
-Si la cátedra anuncia una v5 o cambia algo de esto, lo mejor es pasarle a Claude el anuncio de la regla tal cual (copiado, no resumido) y el primer log de una partida jugada con la regla nueva — así se puede confirmar el comportamiento real en vez de adivinar.
+Si la cátedra anuncia una v5 o cambia algo de esto, la fuente más confiable es la página oficial "How to play" del challenge (`/how-to-play` en el servidor) — guardá o pasale a Claude esa página tal cual (HTML completo, no un resumen) junto con el primer log de una partida jugada con la regla nueva, así se puede confirmar el comportamiento exacto en vez de adivinar.
 
 ## Protocolo (formato de mensajes)
 

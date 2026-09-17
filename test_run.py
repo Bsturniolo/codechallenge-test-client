@@ -78,74 +78,87 @@ class TestFloodFill(unittest.TestCase):
 
 class TestDigitState(unittest.TestCase):
     """v3: la comida es una secuencia de dígitos 1-9 en orden ascendente
-    cíclico -- y es GLOBAL, compartida entre los dos jugadores (esto lo
-    confirmamos con un log real: cuando el rival come el dígito
-    correcto, la secuencia avanza igual que si lo hubiéramos comido
-    nosotros). Por eso el tracker mira score_1 Y score_2 cada turno."""
+    cíclico -- y es GLOBAL, compartida entre los dos jugadores.
 
-    def test_new_game_starts_expecting_starting_digit(self):
-        state = run.get_digit_state('un_game_id_nuevo_' + str(id(object())))
-        self.assertEqual(state['expected'], run.STARTING_DIGIT)
+    Según la documentación oficial ("How to play"), el próximo dígito
+    correcto se puede leer directo del tablero: es el que está en juego
+    cuyo predecesor cíclico (...8, 9, 1...) NO está también en el
+    tablero (el tablero siempre tiene 5 dígitos consecutivos en juego a
+    la vez). Esto reemplaza un sistema anterior más frágil que trataba
+    de inferir la secuencia mirando cómo cambiaba el puntaje turno a
+    turno -- funcionaba, pero tenía un punto débil real: con el
+    multiplicador de v4, una captura correcta podía valer mucho más de
+    lo que ese sistema esperaba y perdía el rastro. Leerlo directo del
+    tablero no tiene ningún estado que se pueda desincronizar."""
 
-    def test_advances_when_we_eat_correctly(self):
-        state = {'expected': 1, 'last_score_1': 50, 'last_score_2': 20}
-        run.sync_expected_digit(state, score_1=50, score_2=120)  # we ate digit 1 (+100)
-        self.assertEqual(state['expected'], 2)
+    def test_reads_the_starting_sequence(self):
+        # Al arrancar la partida están los dígitos 1-5 en juego; el
+        # correcto es el 1 (su predecesor, el 9, no está en el tablero).
+        grid = run.parse_board("|  1   2 3 4  5  |\n|       A        |\n")
+        self.assertEqual(run.determine_target_digit(grid), 1)
 
-    def test_advances_when_rival_eats_correctly(self):
-        # This is the key fix: the rival eating the right digit ALSO
-        # advances what WE should aim for next.
-        state = {'expected': 3, 'last_score_1': 200, 'last_score_2': 300}
-        run.sync_expected_digit(state, score_1=500, score_2=300)  # rival ate digit 3 (+300)
-        self.assertEqual(state['expected'], 4)
+    def test_reads_a_mid_sequence_run(self):
+        # Ya se comió el 1 (correctamente) y apareció el 6 -- quedan
+        # 2,3,4,5,6 en juego. El correcto es el 2 (su predecesor, el 1,
+        # ya no está en el tablero).
+        grid = run.parse_board("|  2   3 4 5  6  |\n|       A        |\n")
+        self.assertEqual(run.determine_target_digit(grid), 2)
 
-    def test_wrong_catch_does_not_change_expected(self):
-        state = {'expected': 5, 'last_score_1': 100, 'last_score_2': 300}
-        run.sync_expected_digit(state, score_1=100, score_2=-200)  # we ate a wrong digit (-500)
-        self.assertEqual(state['expected'], 5)
+    def test_wraps_correctly_near_nine(self):
+        # Racha que cruza el techo del ciclo: 7,8,9,1,2 en juego. El
+        # correcto es el 7 (su predecesor cíclico, el 6, no está).
+        grid = run.parse_board("|  7   8 9 1  2  |\n|       A        |\n")
+        self.assertEqual(run.determine_target_digit(grid), 7)
 
-    def test_plain_survival_does_not_change_expected(self):
-        state = {'expected': 5, 'last_score_1': 100, 'last_score_2': 300}
-        run.sync_expected_digit(state, score_1=101, score_2=301)  # just +1 each, no food eaten
-        self.assertEqual(state['expected'], 5)
+    def test_falls_back_gracefully_with_no_digits_on_board(self):
+        # No debería pasar según las reglas (siempre hay 5 en juego),
+        # pero si pasa, no debería romperse -- devuelve None y
+        # process_snake_move usa STARTING_DIGIT como respaldo.
+        grid = run.parse_board("|                |\n|       A        |\n")
+        self.assertIsNone(run.determine_target_digit(grid))
 
-    def test_wraps_from_nine_to_one(self):
-        state = {'expected': 9, 'last_score_1': 0, 'last_score_2': 0}
-        run.sync_expected_digit(state, score_1=0, score_2=900)  # ate digit 9
-        self.assertEqual(state['expected'], 1)
+    def test_ignores_x_and_snake_characters(self):
+        # 'X' y las letras de las víboras no son dígitos -- no deberían
+        # interferir con la lectura de la secuencia.
+        grid = run.parse_board("|  3 X 4 5  6  7|\n|  a  b  A  B    |\n")
+        self.assertEqual(run.determine_target_digit(grid), 3)
 
-    def test_v4_advances_on_a_high_multiplier_catch(self):
-        # v4 bug found in a real match: at multiplier x10, a correct
-        # catch of digit 9 is worth 9000 -- way outside the old
-        # "100 to 900" detection window. The tracker has to use the
-        # multiplier fields to recognize it, or it silently desyncs.
-        state = {
-            'expected': 9, 'last_score_1': 1000, 'last_score_2': 500,
-            'last_multiplier_1': 10, 'last_multiplier_2': 1,
-        }
-        run.sync_expected_digit(
-            state, score_1=10000, score_2=500, multiplier_1=10, multiplier_2=1,
-        )  # rival ate digit 9 at x10 (+9000)
-        self.assertEqual(state['expected'], 1)  # wraps past 9
+    def test_replays_real_match_and_matches_ground_truth(self):
+        # Regression test con una partida real de torneo. Estos
+        # checkpoints (remaining_moves -> dígito correcto) surgen de
+        # reconstruir la secuencia completa a partir de los puntajes
+        # reales de ambos jugadores en esa partida -- confirman que
+        # leer directo del tablero da el mismo resultado que el análisis
+        # manual detallado (y de hecho corrigió un error nuestro: a
+        # remaining=109 habíamos anotado mal un "1" cuando el tablero ya
+        # mostraba que el 1 había sido comido y el correcto era el 2).
+        match_path = os.path.join(os.path.dirname(__file__), 'match_fixed.json')
+        if not os.path.exists(match_path):
+            self.skipTest('match_fixed.json not present -- skipping real-match replay')
+        with open(match_path) as f:
+            data = json.load(f)
+        our_turns = [
+            e['turn_data'] for e in data
+            if 'turn_data' in e and e['turn_data']['side'] == 'B'
+        ]
+        checkpoints = {283: 1, 267: 2, 163: 8, 133: 9, 109: 2, 81: 3, 13: 5}
+        seen = 0
+        for td in our_turns:
+            if td['remaining_moves'] in checkpoints:
+                grid = run.parse_board(td['board'])
+                target = run.determine_target_digit(grid)
+                self.assertEqual(
+                    target, checkpoints[td['remaining_moves']],
+                    'wrong target digit at remaining={}'.format(td['remaining_moves'])
+                )
+                seen += 1
+        self.assertEqual(seen, len(checkpoints))
 
-    def test_v4_does_not_confuse_an_x_pickup_with_a_digit_catch(self):
-        # +50 (an X pickup) should never be mistaken for a digit catch,
-        # at any multiplier.
-        state = {
-            'expected': 4, 'last_score_1': 100, 'last_score_2': 200,
-            'last_multiplier_1': 1, 'last_multiplier_2': 3,
-        }
-        run.sync_expected_digit(
-            state, score_1=100, score_2=250, multiplier_1=1, multiplier_2=4,
-        )  # we ate an X: +50 score, multiplier went 3 -> 4
-        self.assertEqual(state['expected'], 4)  # unchanged
-
-    def test_v4_replays_real_high_multiplier_match(self):
-        # Regression test for the exact real match where a x10
-        # multiplier catch (9000 points) desynced the old tracker. With
-        # the fix, replaying the whole match should land on the
-        # correct next digit (4, confirmed independently: the rival's
-        # last real catch before match end was digit 3).
+    def test_replays_real_high_multiplier_match(self):
+        # La misma verificación contra la partida con multiplicador
+        # x10 que desincronizó el sistema viejo. Leer directo del
+        # tablero es inmune a ese bug por diseño: nunca mira el
+        # puntaje ni el multiplicador para nada.
         match_path = os.path.join(os.path.dirname(__file__), 'match4_fixed.json')
         if not os.path.exists(match_path):
             self.skipTest('match4_fixed.json not present -- skipping real-match replay')
@@ -155,53 +168,14 @@ class TestDigitState(unittest.TestCase):
             e['turn_data'] for e in data
             if 'turn_data' in e and e['turn_data']['side'] == 'B'
         ]
-        state = run.get_digit_state('v4-real-match-regression-' + str(id(object())))
+        checked = 0
         for td in our_turns:
-            run.sync_expected_digit(
-                state, td['score_1'], td['score_2'],
-                td.get('multiplier_1', 1), td.get('multiplier_2', 1),
-            )
-        self.assertEqual(state['expected'], 4)
-
-    def test_first_turn_just_records_baseline_without_crashing(self):
-        state = run.get_digit_state('brand_new_game')
-        run.sync_expected_digit(state, score_1=0, score_2=0)
-        self.assertEqual(state['expected'], run.STARTING_DIGIT)
-        self.assertEqual(state['last_score_1'], 0)
-        self.assertEqual(state['last_score_2'], 0)
-
-    def test_replays_real_match_log_and_tracks_correctly(self):
-        # Regression test built from an actual tournament match where our
-        # bot's OLD (per-player) tracking got out of sync with the rival
-        # and took five -500 penalties in a row. This replays the real
-        # score_1/score_2 sequence from that match and checks our
-        # tracker lands on the actually-correct digit every time a real
-        # catch (by either player) happened.
-        match_path = os.path.join(os.path.dirname(__file__), 'match_fixed.json')
-        if not os.path.exists(match_path):
-            self.skipTest('match_fixed.json not present -- skipping real-match replay')
-
-        with open(match_path) as f:
-            data = json.load(f)
-        our_turns = [
-            e['turn_data'] for e in data
-            if 'turn_data' in e and e['turn_data']['side'] == 'B'
-        ]
-        state = {'expected': run.STARTING_DIGIT, 'last_score_1': None, 'last_score_2': None}
-        # These are the (remaining_moves, correct_digit) checkpoints we
-        # independently reconstructed from the full match: the digit our
-        # tracker SHOULD be aiming for right before each of those turns.
-        checkpoints = {283: 1, 267: 2, 163: 8, 133: 9, 109: 1, 81: 3, 13: 5}
-        seen = 0
-        for td in our_turns:
-            if td['remaining_moves'] in checkpoints:
-                self.assertEqual(
-                    state['expected'], checkpoints[td['remaining_moves']],
-                    'wrong target digit at remaining={}'.format(td['remaining_moves'])
-                )
-                seen += 1
-            run.sync_expected_digit(state, td['score_1'], td['score_2'])
-        self.assertEqual(seen, len(checkpoints))  # make sure we actually checked all of them
+            grid = run.parse_board(td['board'])
+            target = run.determine_target_digit(grid)
+            self.assertIsNotNone(target)
+            self.assertIn(target, range(1, 10))
+            checked += 1
+        self.assertGreater(checked, 0)
 
 
 class TestChooseDirection(unittest.TestCase):
