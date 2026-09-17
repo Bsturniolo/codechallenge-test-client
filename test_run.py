@@ -114,6 +114,55 @@ class TestDigitState(unittest.TestCase):
         run.sync_expected_digit(state, score_1=0, score_2=900)  # ate digit 9
         self.assertEqual(state['expected'], 1)
 
+    def test_v4_advances_on_a_high_multiplier_catch(self):
+        # v4 bug found in a real match: at multiplier x10, a correct
+        # catch of digit 9 is worth 9000 -- way outside the old
+        # "100 to 900" detection window. The tracker has to use the
+        # multiplier fields to recognize it, or it silently desyncs.
+        state = {
+            'expected': 9, 'last_score_1': 1000, 'last_score_2': 500,
+            'last_multiplier_1': 10, 'last_multiplier_2': 1,
+        }
+        run.sync_expected_digit(
+            state, score_1=10000, score_2=500, multiplier_1=10, multiplier_2=1,
+        )  # rival ate digit 9 at x10 (+9000)
+        self.assertEqual(state['expected'], 1)  # wraps past 9
+
+    def test_v4_does_not_confuse_an_x_pickup_with_a_digit_catch(self):
+        # +50 (an X pickup) should never be mistaken for a digit catch,
+        # at any multiplier.
+        state = {
+            'expected': 4, 'last_score_1': 100, 'last_score_2': 200,
+            'last_multiplier_1': 1, 'last_multiplier_2': 3,
+        }
+        run.sync_expected_digit(
+            state, score_1=100, score_2=250, multiplier_1=1, multiplier_2=4,
+        )  # we ate an X: +50 score, multiplier went 3 -> 4
+        self.assertEqual(state['expected'], 4)  # unchanged
+
+    def test_v4_replays_real_high_multiplier_match(self):
+        # Regression test for the exact real match where a x10
+        # multiplier catch (9000 points) desynced the old tracker. With
+        # the fix, replaying the whole match should land on the
+        # correct next digit (4, confirmed independently: the rival's
+        # last real catch before match end was digit 3).
+        match_path = os.path.join(os.path.dirname(__file__), 'match4_fixed.json')
+        if not os.path.exists(match_path):
+            self.skipTest('match4_fixed.json not present -- skipping real-match replay')
+        with open(match_path) as f:
+            data = json.load(f)
+        our_turns = [
+            e['turn_data'] for e in data
+            if 'turn_data' in e and e['turn_data']['side'] == 'B'
+        ]
+        state = run.get_digit_state('v4-real-match-regression-' + str(id(object())))
+        for td in our_turns:
+            run.sync_expected_digit(
+                state, td['score_1'], td['score_2'],
+                td.get('multiplier_1', 1), td.get('multiplier_2', 1),
+            )
+        self.assertEqual(state['expected'], 4)
+
     def test_first_turn_just_records_baseline_without_crashing(self):
         state = run.get_digit_state('brand_new_game')
         run.sync_expected_digit(state, score_1=0, score_2=0)
@@ -364,20 +413,37 @@ class TestChooseDirection(unittest.TestCase):
         self.assertEqual(direction, 'right')
         self.assertEqual(target, (1, 4))
 
-    def test_prefers_reachable_digit_over_x(self):
-        # Si el dígito correcto SÍ es alcanzable de forma segura, hay que
-        # ir por él primero (vale mucho más que los +50 fijos de la X),
-        # no desviarse a buscar la X aunque esté más cerca.
+    def test_accumulation_phase_prefers_x_while_multiplier_is_low(self):
+        # v4: mientras nuestro propio multiplicador todavía es bajo,
+        # conviene ir por la X primero -- compone el valor de TODAS las
+        # capturas futuras. Confirmado con una partida real: el rival
+        # que hizo esto nos sacó 33432 a 284.
         H, W = 3, 7
         grid = [[' '] * W for _ in range(H)]
         grid[1][3] = 'A'
         grid[1][2] = 'X'   # más cerca, a la izquierda
-        grid[1][5] = '1'   # el objetivo correcto, un poco más lejos
+        grid[1][5] = '1'   # el dígito correcto, un poco más lejos
         head = run.find_char(grid, 'A')
         direction, target = run.choose_direction(
-            grid, H, W, head, 'A', 'a', 'B', 'b', target_digit=1
+            grid, H, W, head, 'A', 'a', 'B', 'b', target_digit=1, own_multiplier=1
         )
-        self.assertEqual(direction, 'right')  # va por el dígito, no por la X
+        self.assertEqual(direction, 'left')  # prioriza la X
+
+    def test_prefers_digit_once_multiplier_is_high_enough(self):
+        # Una vez que ya juntamos bastante multiplicador, conviene
+        # empezar a cobrar: ir directo por el dígito correcto en vez de
+        # seguir sumando X indefinidamente.
+        H, W = 3, 7
+        grid = [[' '] * W for _ in range(H)]
+        grid[1][3] = 'A'
+        grid[1][2] = 'X'
+        grid[1][5] = '1'
+        head = run.find_char(grid, 'A')
+        direction, target = run.choose_direction(
+            grid, H, W, head, 'A', 'a', 'B', 'b', target_digit=1,
+            own_multiplier=run.MULTIPLIER_ACCUMULATION_CAP,
+        )
+        self.assertEqual(direction, 'right')  # ya no vale la pena seguir juntando X
 
 
 if __name__ == '__main__':

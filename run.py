@@ -124,6 +124,16 @@ DIRS = {
 # free value (see choose_direction step 1b below).
 MULTIPLIER_CHAR = 'X'
 
+# How high our own multiplier needs to get before we stop prioritizing
+# 'X' pickups over the correct digit. Confirmed valuable from a real
+# match: a rival who built up to x10 before cashing in digits massively
+# outscored us (33432 vs our 284) -- each of their catches after that
+# was worth up to 10x more than ours. Chosen a bit below the x10 we saw
+# them reach, since returns diminish (going from x9 to x10 helps less
+# than x1 to x2) and there's still a real game to play with the
+# multiplier once we have it.
+MULTIPLIER_ACCUMULATION_CAP = 8
+
 
 def parse_board(board_str):
     """Turn the raw '|aaA   |\n...' string into a 2D list of chars
@@ -347,7 +357,7 @@ def territory_score(grid, rows, cols, my_pos, opp_pos, blocked, extra_blocked_co
 
 
 def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
-                      opp_head_char, opp_body_char, target_digit):
+                      opp_head_char, opp_body_char, target_digit, own_multiplier=1):
     """Decide the next move.
 
     v3 rules: food is now digits 1-9. Only the correct next digit in the
@@ -416,6 +426,43 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
         opp_path = bfs_path_to_cell(grid, rows, cols, opp_head, opp_blocked, target_pos)
         return len(opp_path) if opp_path is not None else None
 
+    def try_reach_x():
+        """If an 'X' (permanent multiplier) is safely reachable and not
+        contested by the rival, return (direction, target_cell) for it.
+        None otherwise."""
+        x_path = bfs_path_to_char(grid, rows, cols, head, blocked, MULTIPLIER_CHAR)
+        if not x_path or not path_is_safe(grid, rows, cols, head, x_path, lookahead_blocked, own_length):
+            return None
+        name = x_path[0]
+        dr, dc = DIRS[name]
+        nr, nc = head[0] + dr, head[1] + dc
+        if risky_head_on(nr, nc):
+            return None
+        r, c = head
+        for step_name in x_path:
+            pdr, pdc = DIRS[step_name]
+            r, c = r + pdr, c + pdc
+        x_opp_dist = opp_distance_to((r, c))
+        # Only worth it if we're not walking into a contested cell --
+        # the multiplier bump isn't worth risking a trap for.
+        if x_opp_dist is None or x_opp_dist > len(x_path):
+            return name, (r, c)
+        return None
+
+    # 0) v4 ACCUMULATION PHASE: a real match showed a rival who ate ten
+    # 'X's back to back BEFORE going after any digit, building their
+    # multiplier to x10, then started cashing in digits worth up to
+    # 9000 each instead of 900 -- they ended that match with 33432
+    # points to our 284. Since the multiplier is permanent and scales
+    # every future digit catch, it's usually worth deferring the digit
+    # chase while our own multiplier is still low and grabbing a safely
+    # reachable 'X' first -- the earlier in the game we do this, the
+    # more future catches benefit from it.
+    if own_multiplier < MULTIPLIER_ACCUMULATION_CAP:
+        result = try_reach_x()
+        if result:
+            return result
+
     # 1) Try to reach the correct digit. Rather than computing only the
     # single shortest path and giving up on the target entirely if that
     # one path looks unsafe, we check all 4 immediate directions that
@@ -472,22 +519,12 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
     # straight to pure territory maximization, check if an 'X' (permanent
     # score multiplier) is safely reachable -- since we weren't going to
     # catch the digit this turn anyway, grabbing a multiplier is free
-    # value with no race time lost.
-    x_path = bfs_path_to_char(grid, rows, cols, head, blocked, MULTIPLIER_CHAR)
-    if x_path and path_is_safe(grid, rows, cols, head, x_path, lookahead_blocked, own_length):
-        name = x_path[0]
-        dr, dc = DIRS[name]
-        nr, nc = head[0] + dr, head[1] + dc
-        if not risky_head_on(nr, nc):
-            r, c = head
-            for step_name in x_path:
-                pdr, pdc = DIRS[step_name]
-                r, c = r + pdr, c + pdc
-            x_opp_dist = opp_distance_to((r, c))
-            # Only worth it if we're not walking into a contested cell --
-            # +50 isn't worth risking a trap for.
-            if x_opp_dist is None or x_opp_dist > len(x_path):
-                return name, (r, c)
+    # value with no race time lost. (Already tried above if we were in
+    # the accumulation phase, but worth trying again here regardless of
+    # multiplier level -- still better than nothing.)
+    result = try_reach_x()
+    if result:
+        return result
 
     # 2) Neither the digit nor an X is safely reachable: pick whichever legal adjacent
     # move gives the most territory / space, skipping risky
@@ -532,51 +569,81 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
 #
 # Fix: since every 'your_turn' message includes BOTH players' current
 # scores (score_1 and score_2), we can detect a correct catch by EITHER
-# player just by watching those numbers change turn to turn (+100..+900
-# = digit*100 eaten correctly; -500 = wrong digit; +1 = plain survival,
-# no food eaten) and keep our own 'expected' digit in sync with reality,
-# regardless of who actually ate it.
+# player just by watching those numbers change turn to turn and keep our
+# own 'expected' digit in sync with reality, regardless of who actually
+# ate it.
+#
+# v4 UPDATE (16 Sep 2026): a correct catch is now digit*100*multiplier,
+# not just digit*100 -- the permanent per-player multiplier from eating
+# 'X' cells scales it. A second real match log caught this: once the
+# rival's multiplier reached x10, their correct catches were worth up to
+# 9000, which fell way outside the old "100 to 900" detection window, so
+# we silently missed them and desynced again (5 wrong catches that
+# match). Fix: use the multiplier_1/multiplier_2 fields (present in
+# every turn message) to recognize a catch at ANY multiplier, not just
+# x1.
 DIGIT_CHARS = set('123456789')
 STARTING_DIGIT = 1  # confirmed correct: real matches start expecting '1'
 
-# game_id -> {'expected': int, 'last_score_1': int|None, 'last_score_2': int|None}
+# game_id -> {'expected': int, 'last_score_1': int|None, 'last_score_2': int|None,
+#             'last_multiplier_1': int, 'last_multiplier_2': int}
 DIGIT_STATE = {}
 
 
 def get_digit_state(game_id):
     return DIGIT_STATE.setdefault(
-        game_id, {'expected': STARTING_DIGIT, 'last_score_1': None, 'last_score_2': None}
+        game_id, {
+            'expected': STARTING_DIGIT,
+            'last_score_1': None, 'last_score_2': None,
+            'last_multiplier_1': 1, 'last_multiplier_2': 1,
+        }
     )
 
 
-def _digit_from_score_delta(delta):
-    """If a score change looks like a correct digit catch (a clean
-    positive multiple of 100 between 100 and 900), return that digit.
-    Otherwise None (could be +1 survival, -500 wrong catch, or 0)."""
-    if delta is not None and delta > 0 and delta % 100 == 0 and 100 <= delta <= 900:
-        return delta // 100
+def _digit_from_score_delta(delta, multiplier):
+    """If a score change looks like a correct digit catch at the given
+    multiplier (a clean positive multiple of 100*multiplier, for a
+    digit 1-9), return that digit. Otherwise None (could be +1
+    survival, +50 an X pickup, -500 wrong catch, or 0)."""
+    multiplier = multiplier or 1
+    unit = 100 * multiplier
+    if delta is not None and delta > 0 and delta % unit == 0:
+        digit = delta // unit
+        if 1 <= digit <= 9:
+            return digit
     return None
 
 
-def sync_expected_digit(state, score_1, score_2):
+def sync_expected_digit(state, score_1, score_2, multiplier_1=1, multiplier_2=1):
     """Update our belief of the shared 'next correct digit' using
     whatever score movement happened since the last turn, from EITHER
     player -- the sequence is shared, so a correct catch by the rival
     advances it exactly as much as a correct catch by us would.
+
+    Each player's own multiplier (as it was BEFORE this move -- eating a
+    digit doesn't change the multiplier, only eating an 'X' does) is
+    what scales their catch, so we use last turn's recorded multiplier
+    for each player, not this turn's.
 
     Order note: between two of our own turns, our own previous move
     happens first and the rival's intervening move happens second, so
     we apply a detected digit from score_2 (us) before score_1 (rival)
     when both moved in the same window."""
     if state['last_score_1'] is not None:
-        digit = _digit_from_score_delta(score_2 - state['last_score_2'])
+        digit = _digit_from_score_delta(
+            score_2 - state['last_score_2'], state.get('last_multiplier_2', 1)
+        )
         if digit is not None:
             state['expected'] = (digit % 9) + 1
-        digit = _digit_from_score_delta(score_1 - state['last_score_1'])
+        digit = _digit_from_score_delta(
+            score_1 - state['last_score_1'], state.get('last_multiplier_1', 1)
+        )
         if digit is not None:
             state['expected'] = (digit % 9) + 1
     state['last_score_1'] = score_1
     state['last_score_2'] = score_2
+    state['last_multiplier_1'] = multiplier_1 or 1
+    state['last_multiplier_2'] = multiplier_2 or 1
     return state['expected']
 # -------------------------------------------------------------------------
 
@@ -614,14 +681,17 @@ async def process_snake_move(websocket, request_data):
     head = find_char(grid, own_head_char)
 
     state = get_digit_state(data['game_id'])
-    sync_expected_digit(state, data.get('score_1'), data.get('score_2'))
+    sync_expected_digit(
+        state, data.get('score_1'), data.get('score_2'),
+        data.get('multiplier_1', 1), data.get('multiplier_2', 1),
+    )
 
     direction = None
     if head:
         direction, _target_pos = choose_direction(
             grid, rows, cols, head,
             own_head_char, own_body_char, opp_head_char, opp_body_char,
-            state['expected'],
+            state['expected'], own_multiplier or 1,
         )
 
     if direction is None:
