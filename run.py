@@ -124,14 +124,22 @@ DIRS = {
 MULTIPLIER_CHAR = 'X'
 
 # How high our own multiplier needs to get before we stop prioritizing
-# 'X' pickups over the correct digit. Confirmed valuable from a real
-# match: a rival who built up to x10 before cashing in digits massively
-# outscored us (33432 vs our 284) -- each of their catches after that
-# was worth up to 10x more than ours. Chosen a bit below the x10 we saw
-# them reach, since returns diminish (going from x9 to x10 helps less
-# than x1 to x2) and there's still a real game to play with the
-# multiplier once we have it.
-MULTIPLIER_ACCUMULATION_CAP = 8
+# 'X' pickups over the correct digit. First set to 8 after a match where
+# a rival who built up to x10 before cashing in digits massively
+# outscored us (33432 vs our 284). A later match showed a rival pushing
+# all the way to x11 while we capped out at 9 under the old limit of 8
+# and still lost -- raised to 11 to match what a strong opponent has
+# actually demonstrated is worth reaching for.
+MULTIPLIER_ACCUMULATION_CAP = 11
+
+# Below this many moves left in the match, stop prioritizing 'X' even
+# if we haven't hit the cap above -- there may not be enough turns left
+# to cash in on a higher multiplier, so it's better to just go bank the
+# points we can still reach. This is a rough rule of thumb (not tuned
+# against real data yet), since catching a handful more digits usually
+# needs noticeably fewer turns than building multiplier up from
+# scratch.
+MIN_REMAINING_MOVES_FOR_ACCUMULATION = 30
 
 
 def parse_board(board_str):
@@ -356,7 +364,8 @@ def territory_score(grid, rows, cols, my_pos, opp_pos, blocked, extra_blocked_co
 
 
 def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
-                      opp_head_char, opp_body_char, target_digit, own_multiplier=1):
+                      opp_head_char, opp_body_char, target_digit, own_multiplier=1,
+                      remaining_moves=None):
     """Decide the next move.
 
     v3 rules: food is now digits 1-9. Only the correct next digit in the
@@ -457,7 +466,8 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
     # chase while our own multiplier is still low and grabbing a safely
     # reachable 'X' first -- the earlier in the game we do this, the
     # more future catches benefit from it.
-    if own_multiplier < MULTIPLIER_ACCUMULATION_CAP:
+    enough_moves_left = remaining_moves is None or remaining_moves >= MIN_REMAINING_MOVES_FOR_ACCUMULATION
+    if own_multiplier < MULTIPLIER_ACCUMULATION_CAP and enough_moves_left:
         result = try_reach_x()
         if result:
             return result
@@ -639,7 +649,7 @@ async def process_snake_move(websocket, request_data):
         direction, _target_pos = choose_direction(
             grid, rows, cols, head,
             own_head_char, own_body_char, opp_head_char, opp_body_char,
-            target_digit, own_multiplier or 1,
+            target_digit, own_multiplier or 1, data.get('remaining_moves'),
         )
 
     if direction is None:
