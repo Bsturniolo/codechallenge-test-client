@@ -170,36 +170,6 @@ def in_bounds(r, c, rows, cols):
     return 0 <= r < rows and 0 <= c < cols
 
 
-def bfs_paths_to_foods(grid, rows, cols, head, blocked, max_targets=6):
-    """Like bfs_path_to_food, but instead of stopping at the first food
-    found, keeps collecting food targets in increasing distance order
-    (up to max_targets). This lets us skip a nearest food that turns out
-    to be a trap and try the next-closest one instead of giving up.
-
-    NOTE: kept for v1-style boards where food is '*'. Since v3, food is
-    digits and process_snake_move uses bfs_path_to_char() instead (see
-    below) -- this is left in only as a fallback in case a match somehow
-    still uses the old '*' food marker."""
-    visited = {head}
-    queue = deque([(head, [])])
-    results = []
-    while queue and len(results) < max_targets:
-        (r, c), path = queue.popleft()
-        if grid[r][c] == '*' and path:
-            results.append(path)
-        for name, (dr, dc) in DIRS.items():
-            nr, nc = r + dr, c + dc
-            if not in_bounds(nr, nc, rows, cols):
-                continue
-            if (nr, nc) in visited:
-                continue
-            if grid[nr][nc] in blocked:
-                continue
-            visited.add((nr, nc))
-            queue.append(((nr, nc), path + [name]))
-    return results
-
-
 def bfs_path_to_char(grid, rows, cols, head, blocked, target_char):
     """Shortest path (list of direction names) from head to the nearest
     cell containing `target_char`, avoiding blocked cells. Returns None
