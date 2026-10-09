@@ -123,6 +123,23 @@ DIRS = {
 # free value (see choose_direction step 1b below).
 MULTIPLIER_CHAR = 'X'
 
+# v5 (23 Sep 2026): a straight '#' wall sits on the board. Running into it
+# costs -500 and the snake doesn't move, so it is a hard obstacle for us
+# (and for the rival's path estimates).
+WALL_CHAR = '#'
+
+# v7 (7 Oct 2026): when a snake crashes, its shed tail becomes "tail food"
+# drawn as a circled letter of the snake that may eat it. U+24B6 / U+24B7.
+# Our OWN letter is worth +100 x multiplier and grows us (and is not part of
+# the digit sequence, so no penalty). The RIVAL's letter is our own shed
+# tail: stepping on it only clears it (no points), so it's merely passable.
+TAIL_FOOD = {'A': '\u24b6', 'B': '\u24b7'}
+
+# Only detour for tail food when it is this close (steps) while a digit
+# chase is the main plan; farther than this it is only taken when the
+# digit isn't safely reachable (step 1b).
+TAIL_FOOD_DETOUR_MAX = 2
+
 # How high our own multiplier needs to get before we stop prioritizing
 # 'X' pickups over the correct digit. First set to 8 after a match where
 # a rival who built up to x10 before cashing in digits massively
@@ -363,7 +380,8 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
     target_char = str(target_digit)
     wrong_digits = DIGIT_CHARS - {target_char}
 
-    blocked = {own_body_char, opp_body_char, opp_head_char} | wrong_digits
+    blocked = {own_body_char, opp_body_char, opp_head_char, WALL_CHAR} | wrong_digits
+    tail_char = TAIL_FOOD.get(own_head_char)
     # For "what happens after I take this step" lookahead (dead-end and
     # territory checks), our current head cell must count as blocked too:
     # next turn it becomes part of our body, so a candidate move can't
@@ -400,32 +418,39 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
         None if unreachable for them (or no rival on the board)."""
         if not opp_head:
             return None
-        opp_blocked = {own_body_char, opp_body_char, own_head_char}
+        opp_blocked = {own_body_char, opp_body_char, own_head_char, WALL_CHAR}
         opp_path = bfs_path_to_cell(grid, rows, cols, opp_head, opp_blocked, target_pos)
         return len(opp_path) if opp_path is not None else None
 
-    def try_reach_x():
-        """If an 'X' (permanent multiplier) is safely reachable and not
-        contested by the rival, return (direction, target_cell) for it.
-        None otherwise."""
-        x_path = bfs_path_to_char(grid, rows, cols, head, blocked, MULTIPLIER_CHAR)
-        if not x_path or not path_is_safe(grid, rows, cols, head, x_path, lookahead_blocked, own_length):
+    def try_reach_char(char, max_len=None):
+        """If a cell holding `char` (an 'X' multiplier or our own tail
+        food) is safely reachable and not contested by the rival, return
+        (direction, target_cell) for it. None otherwise."""
+        if char is None:
             return None
-        name = x_path[0]
+        path = bfs_path_to_char(grid, rows, cols, head, blocked, char)
+        if not path or (max_len is not None and len(path) > max_len):
+            return None
+        if not path_is_safe(grid, rows, cols, head, path, lookahead_blocked, own_length):
+            return None
+        name = path[0]
         dr, dc = DIRS[name]
         nr, nc = head[0] + dr, head[1] + dc
         if risky_head_on(nr, nc):
             return None
         r, c = head
-        for step_name in x_path:
+        for step_name in path:
             pdr, pdc = DIRS[step_name]
             r, c = r + pdr, c + pdc
-        x_opp_dist = opp_distance_to((r, c))
+        char_opp_dist = opp_distance_to((r, c))
         # Only worth it if we're not walking into a contested cell --
-        # the multiplier bump isn't worth risking a trap for.
-        if x_opp_dist is None or x_opp_dist > len(x_path):
+        # the bonus isn't worth risking a trap for.
+        if char_opp_dist is None or char_opp_dist > len(path):
             return name, (r, c)
         return None
+
+    def try_reach_x():
+        return try_reach_char(MULTIPLIER_CHAR)
 
     # 0) v4 ACCUMULATION PHASE: a real match showed a rival who ate ten
     # 'X's back to back BEFORE going after any digit, building their
@@ -441,6 +466,12 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
         result = try_reach_x()
         if result:
             return result
+
+    # 0b) v7: our own tail food (shed by a crashing rival) is free
+    # +100 x multiplier and growth. Grab it when it's basically on our way.
+    result = try_reach_char(tail_char, TAIL_FOOD_DETOUR_MAX)
+    if result:
+        return result
 
     # 1) Try to reach the correct digit. Rather than computing only the
     # single shortest path and giving up on the target entirely if that
@@ -501,7 +532,7 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
     # value with no race time lost. (Already tried above if we were in
     # the accumulation phase, but worth trying again here regardless of
     # multiplier level -- still better than nothing.)
-    result = try_reach_x()
+    result = try_reach_x() or try_reach_char(tail_char)
     if result:
         return result
 
@@ -522,11 +553,18 @@ def choose_direction(grid, rows, cols, head, own_head_char, own_body_char,
         return best_dir, None
 
     # 3) Nothing "safe" left (fully boxed in) -- take any legal move at
-    # all rather than not moving, even if it risks a head-to-head or a
-    # wrong digit (better than certain death standing still).
+    # all rather than not moving. v5/v7: crashing (own/rival body, wall,
+    # edge) is no longer fatal but still costs -500 (and our tail), so
+    # prefer in order: cells we can really step on (wrong digit or a
+    # rival-head cell cost at most -500 yet we keep moving), and only then
+    # a wall.
     for name, (dr, dc) in DIRS.items():
         nr, nc = head[0] + dr, head[1] + dc
-        if in_bounds(nr, nc, rows, cols) and grid[nr][nc] not in {own_body_char, opp_body_char}:
+        if in_bounds(nr, nc, rows, cols) and grid[nr][nc] not in {own_body_char, opp_body_char, WALL_CHAR}:
+            return name, None
+    for name, (dr, dc) in DIRS.items():
+        nr, nc = head[0] + dr, head[1] + dc
+        if in_bounds(nr, nc, rows, cols) and grid[nr][nc] == WALL_CHAR:
             return name, None
 
     return None, None  # truly no legal move exists
