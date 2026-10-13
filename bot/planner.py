@@ -240,42 +240,35 @@ class MovePlanner:
                 best_dir, best_score = name, score
         return (best_dir, None) if best_dir else None
 
-    def _first_direction(self, accepts):
-        """Primera dirección cuya celda cumple ``accepts(caracter)``."""
+    def _resort_cost(self, char):
+        """Costo aproximado de pisar ``char`` (menor es mejor)."""
+        fixed = {self.own.body: 5, self.opp.body: 5, WALL_CHAR: 4,
+                 self.own.head: 3, self.opp.head: 3, DANGER_CHAR: 2,
+                 self.target_char: 0}
+        if char in fixed:
+            return fixed[char]
+        return 1 if char in DIGIT_CHARS else 0
+
+    def _resort_options(self):
+        """Pares ``(costo, -espacio, direccion)`` de los pasos legales."""
+        options = []
         for name in DIRS:
             cell = self._step_cell(name)
-            if self.board.in_bounds(cell) and accepts(
-                    self.board.char_at(cell)):
-                return name
-        return None
-
-    def _is_plain(self, char):
-        """Celda que se puede pisar sin chocar ni explotar."""
-        hard = {self.own.body, self.opp.body, WALL_CHAR}
-        return char not in hard and char != DANGER_CHAR
-
-    @staticmethod
-    def _is_danger(char):
-        """Celda dentro de la zona de una bomba (v8)."""
-        return char == DANGER_CHAR
-
-    @staticmethod
-    def _is_wall(char):
-        """Celda de pared (v5)."""
-        return char == WALL_CHAR
+            if not self.board.in_bounds(cell):
+                continue
+            cost = self._resort_cost(self.board.char_at(cell))
+            options.append((cost, -self.step_area(cell), name))
+        return options
 
     def _last_resort(self):
-        """Cualquier movimiento legal, de menos a más costoso.
+        """Cualquier movimiento legal, del menos al más costoso.
 
-        Primero celdas normales (un dígito incorrecto o la cabeza rival
-        cuestan a lo sumo 500), después la zona de una bomba (v8, el
-        puntaje pasa a 0) y la pared (v5) solo si no hay otra opción.
+        Celda libre, dígito incorrecto (-500), zona de bomba (v8), cabeza
+        rival, pared (v5) y cuerpo. A igual costo gana el paso con más
+        espacio libre alrededor, para no encerrarse.
         """
-        for accepts in (self._is_plain, self._is_danger, self._is_wall):
-            name = self._first_direction(accepts)
-            if name:
-                return name
-        return None
+        options = self._resort_options()
+        return min(options)[2] if options else None
 
     def choose(self):
         """Devuelve ``(direccion, celda_objetivo)``.

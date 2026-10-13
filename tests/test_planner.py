@@ -154,9 +154,14 @@ class TestRaceAndRisk(unittest.TestCase):
         grid[1][1] = 'A'
         return grid
 
-    def test_boxed_in_returns_none(self):
+    def test_boxed_in_still_returns_a_direction(self):
         grid = [list('aba'), list('bAb'), list('aba')]
-        self.assertEqual(choose(grid), (None, None))
+        self.assertIsNotNone(choose(grid)[0])
+
+    def test_last_resort_avoids_wrong_digit_and_head(self):
+        grid = [list('b.b'), list('bAB'), list('b9b')]
+        grid[0][1] = '5'
+        self.assertIn(choose(grid)[0], ('up', 'down'))
 
     def test_last_resort_into_rival_head(self):
         grid = [list('bbb'), list('aAB'), list('bbb')]
