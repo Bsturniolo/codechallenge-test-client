@@ -4,15 +4,15 @@
 
 | Name              |    Stmts |     Miss |    Cover |   Missing |
 |------------------ | -------: | -------: | -------: | --------: |
-| bot/board.py      |      110 |        0 |     100% |           |
+| bot/board.py      |      127 |        0 |     100% |           |
 | bot/client.py     |       68 |        0 |     100% |           |
-| bot/constants.py  |       12 |        0 |     100% |           |
+| bot/constants.py  |       14 |        0 |     100% |           |
 | bot/logger.py     |       19 |        0 |     100% |           |
-| bot/planner.py    |      159 |        0 |     100% |           |
+| bot/planner.py    |      168 |        0 |     100% |           |
 | bot/protocol.py   |        5 |        0 |     100% |           |
-| bot/snake\_bot.py |       38 |        0 |     100% |           |
+| bot/snake\_bot.py |       39 |        0 |     100% |           |
 | run.py            |        8 |        0 |     100% |           |
-| **TOTAL**         |  **419** |    **0** | **100%** |           |
+| **TOTAL**         |  **448** |    **0** | **100%** |           |
 
 
 ## Setup coverage badge
