@@ -81,6 +81,22 @@ class TestSnakeBot(unittest.TestCase):
         message = self._play(turn('A', board=board))
         self.assertIn(message['data']['direction'], DIRS)
 
+    def test_does_not_walk_into_a_bomb_zone(self):
+        # La bomba chica explota a 1 celda: ir a la derecha dejaría la
+        # cabeza dentro del cuadrado de 3x3, aunque el dígito esté ahí.
+        rows = ["A    ", "  \U0001F9E8  ", "     "]
+        board = board_str(rows).replace("A    ", "A 1  ", 1)
+        direction = self._play(turn('A', board=board))['data']['direction']
+        self.assertNotEqual(direction, 'right')
+        self.assertIn(direction, DIRS)
+
+    def test_big_bomb_blocks_a_diagonal_approach(self):
+        rows = ["A      ", "       ", "   \U0001F4A3   ", "       ",
+                "      B"]
+        board = board_str(rows)
+        direction = self._play(turn('A', board=board))['data']['direction']
+        self.assertIn(direction, DIRS)
+
     def test_logs_action(self):
         self._play(turn('A'))
         self.assertTrue(self.logger.history['g'][-1].startswith('> '))

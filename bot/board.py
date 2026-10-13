@@ -2,7 +2,7 @@
 
 from collections import deque
 
-from bot.constants import DIGIT_CHARS, DIRS
+from bot.constants import BOMB_RADII, DANGER_CHAR, DIGIT_CHARS, DIRS
 
 
 class Board:
@@ -185,3 +185,39 @@ class Board:
         theirs = self.distances(opp_pos, blocked) if opp_pos else {}
         inf = float('inf')
         return sum(1 for pos, d in mine.items() if d < theirs.get(pos, inf))
+
+    # --- v8: bombas -----------------------------------------------------
+
+    def _bombs(self):
+        """Posiciones de las bombas con su radio de explosión."""
+        return [((r, c), BOMB_RADII[ch])
+                for r, row in enumerate(self.grid)
+                for c, ch in enumerate(row) if ch in BOMB_RADII]
+
+    def _square(self, center, radius):
+        """Celdas del tablero a distancia Chebyshev <= ``radius``."""
+        row, col = center
+        cells = {(r, c)
+                 for r in range(row - radius, row + radius + 1)
+                 for c in range(col - radius, col + radius + 1)}
+        return {cell for cell in cells if self.in_bounds(cell)}
+
+    def danger_zone(self):
+        """Celdas donde terminar un movimiento haría explotar una bomba."""
+        zone = set()
+        for center, radius in self._bombs():
+            zone |= self._square(center, radius)
+        return zone
+
+    def mark_danger(self, keep):
+        """Copia del tablero con la zona de explosión marcada.
+
+        Las celdas de la zona se reemplazan por ``DANGER_CHAR``, salvo
+        las que tengan un carácter de ``keep`` (serpientes y pared), que
+        el resto de la estrategia necesita ver tal cual.
+        """
+        grid = [row[:] for row in self.grid]
+        for r, c in self.danger_zone():
+            if grid[r][c] not in keep:
+                grid[r][c] = DANGER_CHAR
+        return Board(grid)

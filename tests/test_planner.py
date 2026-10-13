@@ -3,7 +3,8 @@
 import unittest
 
 from bot.board import Board
-from bot.constants import DIRS, MULTIPLIER_ACCUMULATION_CAP
+from bot.constants import (
+    DANGER_CHAR, DIRS, MULTIPLIER_ACCUMULATION_CAP)
 from bot.planner import MovePlanner, Side, manhattan, opposite
 from tests.helpers import choose, empty, planner_for
 
@@ -319,6 +320,62 @@ class TestV7TailFood(unittest.TestCase):
         planner = MovePlanner(board, (1, 1), Side('Z', 'z'),
                               Side.from_letter('A'), 1)
         self.assertIsNotNone(planner.choose()[0])
+
+
+class TestV8Bombs(unittest.TestCase):
+    """v8: las celdas dentro de la zona de explosión están prohibidas."""
+
+    @staticmethod
+    def _danger_grid(height=7, width=9):
+        grid = empty(height, width)
+        for row in range(height):
+            grid[row][4] = DANGER_CHAR
+        return grid
+
+    def test_never_enters_danger_when_there_is_another_move(self):
+        grid = empty(5, 5)
+        grid[2][2] = 'A'
+        for pos in ((1, 2), (2, 3), (3, 2)):
+            grid[pos[0]][pos[1]] = DANGER_CHAR
+        self.assertEqual(choose(grid)[0], 'left')
+
+    def test_routes_around_a_blast_zone_to_the_digit(self):
+        grid = empty(7, 9)
+        grid[3][0] = 'A'
+        grid[3][8] = '1'
+        for row in range(2, 5):
+            grid[row][4] = DANGER_CHAR
+        direction, target = choose(grid)
+        self.assertEqual(target, (3, 8))
+        self.assertIn(direction, ('up', 'right', 'down'))
+
+    def test_digit_walled_off_by_danger_is_not_pursued(self):
+        grid = self._danger_grid()
+        grid[3][0] = 'A'
+        grid[3][8] = '1'
+        direction, target = choose(grid)
+        self.assertIsNone(target)
+        self.assertNotEqual(grid[3][1], DANGER_CHAR)
+        self.assertIsNotNone(direction)
+
+    def test_last_resort_prefers_wrong_digit_over_explosion(self):
+        grid = [list('bbb'), list('aAD'), list('bbb')]
+        grid[1][2] = DANGER_CHAR
+        grid[0][1] = '5'
+        self.assertEqual(choose(grid)[0], 'up')
+
+    def test_last_resort_prefers_explosion_over_wall(self):
+        grid = [list('b#b'), list('aAD'), list('bbb')]
+        grid[1][2] = DANGER_CHAR
+        self.assertEqual(choose(grid)[0], 'right')
+
+    def test_rival_path_estimate_ignores_danger(self):
+        # El rival igual puede cruzar la zona: la carrera sigue disputada.
+        grid = empty(1, 7)
+        grid[0][0] = 'A'
+        grid[0][6] = 'B'
+        grid[0][3] = DANGER_CHAR
+        self.assertEqual(planner_for(grid).opp_distance_to((0, 1)), 5)
 
 
 class TestPlannerPieces(unittest.TestCase):

@@ -41,3 +41,14 @@ MIN_REMAINING_MOVES_FOR_ACCUMULATION = 30
 # Cantidad de celdas recientes del camino que se consideran ocupadas por
 # el cuerpo al evaluar si un camino termina en un callejón sin salida.
 PATH_SAFETY_DEPTH = 3
+
+# v8 (14 oct 2026): bombas de proximidad. Explotan cuando la cabeza
+# termina un movimiento a distancia Chebyshev (max(|dfila|, |dcol|)) menor
+# o igual al radio. La explosión deja el puntaje en 0 (o -500 si ya era
+# <= 0) pero el movimiento se hace igual. Son un carácter cada una
+# (fuera del BMP, por eso se separan las filas por code point).
+BOMB_RADII = {'\U0001F4A3': 2, '\U0001F9E8': 1}
+
+# Marca interna (no existe en el juego) para las celdas dentro de la
+# zona de explosión de alguna bomba: el bot las trata como prohibidas.
+DANGER_CHAR = '\ue000'

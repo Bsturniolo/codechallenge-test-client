@@ -75,6 +75,13 @@ da una jugada:
 Siempre evita dígitos incorrectos, cuerpos, la pared `#`, y no se acerca a
 la cabeza del rival si este es estrictamente más largo.
 
+**Bombas (v8):** `Board.mark_danger()` marca como prohibidas todas las celdas
+dentro de la zona de explosión de alguna bomba. Como cada celda de un camino
+es el final de un movimiento, el bot no pisa ninguna celda de la zona, ni en
+el destino ni de paso. Como el juego nunca pone comida dentro de una zona, evitarlas no
+cuesta puntos. Solo si no queda otra opción, el último recurso elige primero
+una celda normal, después una zona de bomba y por último la pared.
+
 ## Tests
 
 ```bash
@@ -120,6 +127,7 @@ xenon --max-absolute A --max-modules A --max-average A bot run.py
 | v5 | 23 sep 2026 | Pared `#` (línea de hasta 11 celdas que se achica). Chocarla: −500 y no se mueve. |
 | v6 | 30 sep 2026 | Cada dígito aparece en 3–5 copias; solo una copia da puntos. |
 | v7 | 7 oct 2026 | Partidas de 400 movimientos. Chocar ya no termina la partida: la serpiente no se mueve, conserva 3 celdas y suelta comida de cola `Ⓐ`/`Ⓑ` para el rival. Primer choque: puntaje a 0; luego −500; bajo −2500 se pierde. |
+| v8 | 14 oct 2026 | Bombas `💣` (zona 5×5) y `🧨` (zona 3×3): explotan si la cabeza termina un movimiento a distancia Chebyshev ≤ 2 (`💣`) o ≤ 1 (`🧨`). La explosión deja el puntaje en 0 (o −500 si ya era ≤ 0), pero el movimiento se hace igual. Nunca hay comida ni `X` dentro de una zona. Tras la ronda 150 desaparecen todas las bombas. Tableros de 20 a 30 por lado. |
 
 ## Protocolo
 
@@ -133,6 +141,7 @@ El tablero llega como string con `|` en los bordes de cada fila:
 | `X` | Multiplicador permanente |
 | `#` | Pared |
 | `Ⓐ` / `Ⓑ` | Comida de cola (solo la come la serpiente de esa letra) |
+| `💣` / `🧨` | Bomba grande / chica (desde v8): explota si la cabeza termina cerca |
 
 Movimiento:
 

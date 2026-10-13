@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from bot.constants import (
-    DIGIT_CHARS, DIRS, MIN_REMAINING_MOVES_FOR_ACCUMULATION,
+    DANGER_CHAR, DIGIT_CHARS, DIRS, MIN_REMAINING_MOVES_FOR_ACCUMULATION,
     MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_CHAR, PATH_SAFETY_DEPTH,
     TAIL_FOOD, TAIL_FOOD_DETOUR_MAX, WALL_CHAR,
 )
@@ -56,8 +56,8 @@ class MovePlanner:
         self.own_multiplier = own_multiplier
         self.remaining_moves = remaining_moves
         wrong_digits = DIGIT_CHARS - {self.target_char}
-        self.blocked = ({own.body, opp.body, opp.head, WALL_CHAR}
-                        | wrong_digits)
+        self.blocked = ({own.body, opp.body, opp.head, WALL_CHAR,
+                         DANGER_CHAR} | wrong_digits)
         self.lookahead_blocked = self.blocked | {own.head}
         self.own_length = 1 + board.count(own.body)
         self.opp_length = 1 + board.count(opp.body)
@@ -249,13 +249,33 @@ class MovePlanner:
                 return name
         return None
 
-    def _last_resort(self):
-        """Cualquier movimiento legal; la pared (v5) solo si no hay otro."""
+    def _is_plain(self, char):
+        """Celda que se puede pisar sin chocar ni explotar."""
         hard = {self.own.body, self.opp.body, WALL_CHAR}
-        name = self._first_direction(lambda ch: ch not in hard)
-        if name is None:
-            name = self._first_direction(lambda ch: ch == WALL_CHAR)
-        return name
+        return char not in hard and char != DANGER_CHAR
+
+    @staticmethod
+    def _is_danger(char):
+        """Celda dentro de la zona de una bomba (v8)."""
+        return char == DANGER_CHAR
+
+    @staticmethod
+    def _is_wall(char):
+        """Celda de pared (v5)."""
+        return char == WALL_CHAR
+
+    def _last_resort(self):
+        """Cualquier movimiento legal, de menos a más costoso.
+
+        Primero celdas normales (un dígito incorrecto o la cabeza rival
+        cuestan a lo sumo 500), después la zona de una bomba (v8, el
+        puntaje pasa a 0) y la pared (v5) solo si no hay otra opción.
+        """
+        for accepts in (self._is_plain, self._is_danger, self._is_wall):
+            name = self._first_direction(accepts)
+            if name:
+                return name
+        return None
 
     def choose(self):
         """Devuelve ``(direccion, celda_objetivo)``.

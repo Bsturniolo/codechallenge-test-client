@@ -3,6 +3,7 @@
 import unittest
 
 from bot.board import Board
+from bot.constants import DANGER_CHAR
 from tests.helpers import board_str, empty
 
 
@@ -136,6 +137,60 @@ class TestSearch(unittest.TestCase):
         board = Board(empty(1, 3))
         self.assertEqual(board.distances((0, 0), set()),
                          {(0, 0): 0, (0, 1): 1, (0, 2): 2})
+
+
+BIG, SMALL = '\U0001F4A3', '\U0001F9E8'
+
+
+class TestBombs(unittest.TestCase):
+    """v8: zonas de explosión de las bombas."""
+
+    def test_bombs_are_one_cell_each(self):
+        board = Board.from_string(board_str([" " + BIG + SMALL + " "]))
+        self.assertEqual(board.grid, [[' ', BIG, SMALL, ' ']])
+
+    def test_big_bomb_zone_is_5x5(self):
+        grid = empty(9, 9)
+        grid[4][4] = BIG
+        zone = Board(grid).danger_zone()
+        self.assertEqual(len(zone), 25)
+        self.assertIn((2, 2), zone)   # diagonal a distancia 2
+        self.assertNotIn((1, 4), zone)
+
+    def test_small_bomb_zone_is_3x3(self):
+        grid = empty(9, 9)
+        grid[4][4] = SMALL
+        zone = Board(grid).danger_zone()
+        self.assertEqual(len(zone), 9)
+        self.assertIn((3, 3), zone)
+        self.assertNotIn((2, 4), zone)
+
+    def test_zone_is_clipped_to_the_board(self):
+        grid = empty(5, 5)
+        grid[0][0] = BIG
+        self.assertEqual(len(Board(grid).danger_zone()), 9)
+
+    def test_overlapping_zones_count_once(self):
+        grid = empty(5, 9)
+        grid[2][2] = SMALL
+        grid[2][3] = SMALL
+        self.assertEqual(len(Board(grid).danger_zone()), 12)
+
+    def test_no_bombs_no_zone(self):
+        self.assertEqual(Board(empty(3, 3)).danger_zone(), set())
+
+    def test_mark_danger_keeps_snakes_and_walls(self):
+        grid = empty(5, 5)
+        grid[2][2] = SMALL
+        grid[2][1] = 'b'
+        grid[1][1] = '#'
+        marked = Board(grid).mark_danger({'b', '#'})
+        self.assertEqual(marked.char_at((2, 1)), 'b')
+        self.assertEqual(marked.char_at((1, 1)), '#')
+        self.assertEqual(marked.char_at((2, 2)), DANGER_CHAR)
+        self.assertEqual(marked.char_at((3, 3)), DANGER_CHAR)
+        self.assertEqual(marked.char_at((0, 0)), ' ')
+        self.assertEqual(grid[2][2], SMALL)   # no modifica el original
 
 
 if __name__ == '__main__':

@@ -3,7 +3,7 @@
 from random import choice
 
 from bot.board import Board
-from bot.constants import DIRS, STARTING_DIGIT
+from bot.constants import DIRS, STARTING_DIGIT, WALL_CHAR
 from bot.planner import MovePlanner, Side, opposite
 from bot.protocol import send
 
@@ -29,15 +29,21 @@ class SnakeBot:
         return choice(list(DIRS))
 
     def build_planner(self, board, head, data):
-        """Arma el ``MovePlanner`` del turno a partir de los datos."""
+        """Arma el ``MovePlanner`` del turno a partir de los datos.
+
+        El dígito objetivo se lee del tablero original; después se marca
+        la zona de explosión de las bombas (v8) para que el planificador
+        las evite.
+        """
         own = Side.from_letter(data['side'])
         opp = Side.from_letter(opposite(data['side']))
         mine, theirs = self.multipliers(data)
         if mine is not None:
             print('multiplier: us={} rival={}'.format(mine, theirs))
         target = board.target_digit() or STARTING_DIGIT
-        return MovePlanner(board, head, own, opp, target, mine or 1,
-                           data.get('remaining_moves'))
+        keep = {own.head, own.body, opp.head, opp.body, WALL_CHAR}
+        return MovePlanner(board.mark_danger(keep), head, own, opp, target,
+                           mine or 1, data.get('remaining_moves'))
 
     def decide(self, data):
         """Elige la dirección para los datos de un turno."""
