@@ -3,7 +3,7 @@
 ![Lint](https://github.com/Bsturniolo/codechallenge-test-client/actions/workflows/lint.yml/badge.svg)
 ![Tests](https://github.com/Bsturniolo/codechallenge-test-client/actions/workflows/tests.yml/badge.svg)
 ![Complejidad](https://github.com/Bsturniolo/codechallenge-test-client/actions/workflows/complexity.yml/badge.svg)
-![Cobertura](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Bsturniolo/codechallenge-test-client/python-coverage-comment-action-data/endpoint.json)
+[![Cobertura](https://raw.githubusercontent.com/Bsturniolo/codechallenge-test-client/python-coverage-comment-action-data/badge.svg)](https://github.com/Bsturniolo/codechallenge-test-client/tree/python-coverage-comment-action-data)
 
 Bot en Python que juega automáticamente al Snake multijugador del
 CodeChallenge (Computación II – 2026) por WebSocket.

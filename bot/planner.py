@@ -72,8 +72,8 @@ class MovePlanner:
 
     def _passable(self, cell):
         """True si la celda existe y no está bloqueada."""
-        return (self.board.in_bounds(cell)
-                and self.board.char_at(cell) not in self.blocked)
+        inside = self.board.in_bounds(cell)
+        return inside and self.board.char_at(cell) not in self.blocked
 
     def risky_head_on(self, cell):
         """True si pisar ``cell`` arriesga un choque de frente perdido.
@@ -176,8 +176,8 @@ class MovePlanner:
 
     def _opportunistic_bonus(self):
         """``X`` o comida de cola cuando el dígito no es alcanzable."""
-        return (self.try_reach_char(MULTIPLIER_CHAR)
-                or self.try_reach_char(self.own.tail))
+        found = self.try_reach_char(MULTIPLIER_CHAR)
+        return found or self.try_reach_char(self.own.tail)
 
     def _sub_path(self, cell):
         """Camino desde ``cell`` al dígito objetivo (``[]`` si es él)."""
