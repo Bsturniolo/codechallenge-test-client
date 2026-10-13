@@ -167,8 +167,22 @@ class MovePlanner:
     def _accumulate(self):
         """Fase de acumulación: ir por una ``X`` segura (v4)."""
         if self._accumulating():
-            return self.try_reach_char(MULTIPLIER_CHAR)
+            return self.try_reach_char(
+                MULTIPLIER_CHAR, self._multiplier_budget())
         return None
+
+    def _multiplier_budget(self):
+        """Pasos máximos que vale la pena gastar en una ``X``.
+
+        Una ``X`` suma +1 al multiplicador en cada comida futura, pero ir
+        a buscarla retrasa las comidas por ``largo * multiplicador``. Si
+        el camino es más largo que los movimientos propios que quedan
+        dividido el multiplicador, no conviene. ``None`` si no se sabe
+        cuántos movimientos quedan.
+        """
+        if self.remaining_moves is None:
+            return None
+        return max(1, self.remaining_moves // 2 // self.own_multiplier)
 
     def _grab_tail(self):
         """Comida de cola propia si está prácticamente de paso (v7)."""

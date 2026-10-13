@@ -213,6 +213,28 @@ class TestMultiplierX(unittest.TestCase):
         direction, _ = choose(grid, own_multiplier=1, remaining_moves=10)
         self.assertEqual(direction, 'right')
 
+    def test_multiplier_budget_shrinks_with_multiplier(self):
+        grid = empty(3, 7)
+        grid[1][3] = 'A'
+        low = planner_for(grid, own_multiplier=2, remaining_moves=200)
+        high = planner_for(grid, own_multiplier=10, remaining_moves=200)
+        self.assertEqual(low._multiplier_budget(), 50)
+        self.assertEqual(high._multiplier_budget(), 10)
+
+    def test_multiplier_budget_unknown_without_remaining(self):
+        grid = empty(3, 7)
+        grid[1][3] = 'A'
+        self.assertIsNone(planner_for(grid)._multiplier_budget())
+
+    def test_far_x_not_worth_it_when_multiplier_is_high(self):
+        grid = empty(3, 12)
+        grid[1][1] = 'A'
+        grid[1][10] = 'X'
+        grid[0][1] = '1'
+        direction, _ = choose(
+            grid, own_multiplier=10, remaining_moves=100)
+        self.assertEqual(direction, 'up')
+
     def test_contested_x_is_rejected(self):
         grid = empty(3, 9)
         grid[1][0] = 'A'
