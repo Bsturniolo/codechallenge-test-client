@@ -33,7 +33,7 @@ TAIL_FOOD = {'A': 'Ⓐ', 'B': 'Ⓑ'}
 TAIL_FOOD_DETOUR_MAX = 2
 
 # Se prioriza juntar 'X' mientras el multiplicador propio sea menor.
-MULTIPLIER_ACCUMULATION_CAP = 11
+MULTIPLIER_ACCUMULATION_CAP = 16
 
 # Con menos movimientos restantes que estos, ya no se acumula 'X'.
 MIN_REMAINING_MOVES_FOR_ACCUMULATION = 30

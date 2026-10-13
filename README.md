@@ -60,7 +60,7 @@ tests/                 Tests unittest (+ tests/data con partidas reales)
 da una jugada:
 
 1. **Acumular multiplicador (v4):** mientras el multiplicador propio sea
-   menor a `MULTIPLIER_ACCUMULATION_CAP` (11) y queden suficientes
+   menor a `MULTIPLIER_ACCUMULATION_CAP` (16) y queden suficientes
    movimientos, va por una `X` segura.
 2. **Comida de cola propia (v7):** `Ⓐ`/`Ⓑ` de nuestra letra a 2 pasos o
    menos.
