@@ -35,6 +35,11 @@ TAIL_FOOD_DETOUR_MAX = 2
 # Se prioriza juntar 'X' mientras el multiplicador propio sea menor.
 MULTIPLIER_ACCUMULATION_CAP = 16
 
+# Qué tan lejos vale la pena ir por una 'X': el presupuesto de pasos es
+# movimientos propios restantes * este factor / multiplicador. Con 1 es
+# el punto de equilibrio teórico; más alto busca multiplicadores más seguido.
+MULTIPLIER_BUDGET_FACTOR = 2
+
 # Con menos movimientos restantes que estos, ya no se acumula 'X'.
 MIN_REMAINING_MOVES_FOR_ACCUMULATION = 30
 

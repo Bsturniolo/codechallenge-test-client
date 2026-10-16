@@ -4,7 +4,8 @@ from dataclasses import dataclass
 
 from bot.constants import (
     DANGER_CHAR, DIGIT_CHARS, DIRS, MIN_REMAINING_MOVES_FOR_ACCUMULATION,
-    MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_CHAR, PATH_SAFETY_DEPTH,
+    MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_BUDGET_FACTOR,
+    MULTIPLIER_CHAR, PATH_SAFETY_DEPTH,
     TAIL_FOOD, TAIL_FOOD_DETOUR_MAX, WALL_CHAR,
 )
 
@@ -182,7 +183,9 @@ class MovePlanner:
         """
         if self.remaining_moves is None:
             return None
-        return max(1, self.remaining_moves // 2 // self.own_multiplier)
+        own_left = self.remaining_moves // 2
+        return max(1, own_left * MULTIPLIER_BUDGET_FACTOR
+                   // self.own_multiplier)
 
     def _grab_tail(self):
         """Comida de cola propia si está prácticamente de paso (v7)."""

@@ -4,11 +4,12 @@ import unittest
 
 from bot.board import Board
 from bot.constants import (
-    DANGER_CHAR, DIRS, MULTIPLIER_ACCUMULATION_CAP)
+    DANGER_CHAR, DIRS, MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_BUDGET_FACTOR)
 from bot.planner import MovePlanner, Side, manhattan, opposite
 from tests.helpers import choose, empty, planner_for
 
 CAP = MULTIPLIER_ACCUMULATION_CAP
+FACTOR = MULTIPLIER_BUDGET_FACTOR
 TAIL_A, TAIL_B = 'Ⓐ', 'Ⓑ'
 
 
@@ -218,8 +219,8 @@ class TestMultiplierX(unittest.TestCase):
         grid[1][3] = 'A'
         low = planner_for(grid, own_multiplier=2, remaining_moves=200)
         high = planner_for(grid, own_multiplier=10, remaining_moves=200)
-        self.assertEqual(low._multiplier_budget(), 50)
-        self.assertEqual(high._multiplier_budget(), 10)
+        self.assertEqual(low._multiplier_budget(), 100 * FACTOR // 2)
+        self.assertEqual(high._multiplier_budget(), 100 * FACTOR // 10)
 
     def test_multiplier_budget_unknown_without_remaining(self):
         grid = empty(3, 7)
@@ -232,7 +233,7 @@ class TestMultiplierX(unittest.TestCase):
         grid[1][10] = 'X'
         grid[0][1] = '1'
         direction, _ = choose(
-            grid, own_multiplier=10, remaining_moves=100)
+            grid, own_multiplier=10, remaining_moves=60)
         self.assertEqual(direction, 'up')
 
     def test_contested_x_is_rejected(self):
