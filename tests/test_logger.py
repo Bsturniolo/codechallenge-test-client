@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from bot.constants import LOG_DIR
 from bot.logger import GameLogger
 from tests.helpers import quiet
 
@@ -32,8 +33,17 @@ class TestGameLogger(unittest.TestCase):
         self.logger.log_event('g2', {'x': 1})
         with quiet():
             self.logger.write('g2')
-        with open('game_g2.log') as handle:
+        with open(os.path.join(LOG_DIR, 'game_g2.log')) as handle:
             self.assertIn('< {"x": 1}', handle.read())
+
+    def test_write_uses_custom_folder(self):
+        logger = GameLogger(log_dir='otra')
+        logger.log_event('g4', {'y': 2})
+        with quiet():
+            logger.write('g4')
+        self.assertTrue(os.path.exists(os.path.join('otra', 'game_g4.log')))
+        self.assertEqual(logger.path_for('g4'),
+                         os.path.join('otra', 'game_g4.log'))
 
     def test_write_handles_oserror(self):
         buffer = io.StringIO()

@@ -68,3 +68,6 @@ TERRITORY_TOLERANCE = 0.9
 # en cada comida futura.
 MULTIPLIER_PICKUP_POINTS = 50
 EXPECTED_DIGIT = 5
+
+# Carpeta donde se guardan los logs de cada partida (se crea sola).
+LOG_DIR = 'partidas'

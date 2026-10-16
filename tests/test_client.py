@@ -54,7 +54,8 @@ class TestPlayLoop(unittest.TestCase):
         message = json.dumps({'event': 'game_over',
                               'data': {'game_id': 'gz'}})
         self._play([message, Exception('closed')])
-        self.assertTrue(os.path.exists('game_gz.log'))
+        path = os.path.join('partidas', 'game_gz.log')
+        self.assertTrue(os.path.exists(path))
 
     def test_game_over_without_game_id(self):
         message = json.dumps({'event': 'game_over', 'data': {}})

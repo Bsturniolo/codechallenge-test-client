@@ -20,7 +20,8 @@ python3 run.py <tu_auth_token>
 También se puede usar `./start.sh <tu_auth_token>`, que instala
 `websockets` si falta y lanza el bot. El bot acepta cualquier desafío que
 le llegue, juega solo y al terminar cada partida guarda
-`game_<game_id>.log` con los eventos recibidos (`<`) y las jugadas
+`partidas/game_<game_id>.log` (la carpeta se crea sola) con los eventos
+recibidos (`<`) y las jugadas
 enviadas (`>`).
 
 Servidor: `wss://server.codechallenge.net.ar/ws?token=<auth_token>`
