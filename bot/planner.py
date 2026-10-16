@@ -282,7 +282,17 @@ class MovePlanner:
             cell = self._viable_step(name)
             if cell is not None:
                 steps[name] = (cell, self._score_step(cell))
-        return steps
+        return self._roomy_steps(steps)
+
+    def _roomy_steps(self, steps):
+        """Descarta pasos que nos dejan sin espacio para nuestro largo.
+
+        Si todos los pasos son estrechos se devuelven tal cual: mejor
+        moverse que no hacer nada.
+        """
+        roomy = {name: step for name, step in steps.items()
+                 if self.step_area(step[0]) > self.own_length}
+        return roomy or steps
 
     def _territory_move(self):
         """Paso por territorio cuando no hay comida alcanzable.

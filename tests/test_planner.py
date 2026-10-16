@@ -282,6 +282,18 @@ class TestMultiplierX(unittest.TestCase):
         with patch('bot.planner.DIGIT_PRIORITY', 1):
             self.assertFalse(planner._digit_beats_x(3))
 
+    def test_territory_move_avoids_pocket_smaller_than_snake(self):
+        grid = empty(5, 9)
+        grid[2][4] = 'A'
+        for col in (3, 2, 1):
+            grid[2][col] = 'a'
+        grid[1][5] = 'b'
+        grid[3][5] = 'b'
+        grid[2][6] = 'b'
+        grid[2][8] = '1'
+        planner = planner_for(grid)
+        self.assertIn(planner._territory_move()[0], ('up', 'down'))
+
     def test_contested_x_is_rejected(self):
         grid = empty(3, 9)
         grid[1][0] = 'A'
