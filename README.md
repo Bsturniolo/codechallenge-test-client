@@ -63,7 +63,9 @@ da una jugada:
    menor a `MULTIPLIER_ACCUMULATION_CAP` (16) y queden suficientes
    movimientos, va por una `X` segura, pero solo si el camino cuesta menos
    de `movimientos propios restantes * MULTIPLIER_BUDGET_FACTOR / multiplicador`
-   pasos (si el multiplicador ya es alto, solo vale una `X` muy cercana).
+   pasos, y además solo si rinde más puntos por paso que comer el dígito
+   objetivo (un 8 o 9 con multiplicador alto se come antes que una `X`
+   lejana).
 2. **Comida de cola propia (v7):** `Ⓐ`/`Ⓑ` de nuestra letra a 2 pasos o
    menos.
 3. **Dígito correcto:** evalúa las 4 direcciones, descarta las que

@@ -253,6 +253,26 @@ class TestMultiplierX(unittest.TestCase):
         grid = [list('aba'), list('bAb'), list('aba')]
         self.assertIsNone(planner_for(grid)._territory_move())
 
+    @staticmethod
+    def _x_vs_digit_grid(x_col):
+        grid = empty(5, 14)
+        grid[2][6] = 'A'
+        grid[2][x_col] = 'X'
+        grid[2][9] = '9'
+        return grid
+
+    def test_valuable_digit_beats_far_x(self):
+        direction, _ = choose(
+            self._x_vs_digit_grid(0), target_digit=9,
+            own_multiplier=8, remaining_moves=100)
+        self.assertEqual(direction, 'right')
+
+    def test_adjacent_x_beats_cheap_digit(self):
+        direction, _ = choose(
+            self._x_vs_digit_grid(5), target_digit=9,
+            own_multiplier=1, remaining_moves=100)
+        self.assertEqual(direction, 'left')
+
     def test_contested_x_is_rejected(self):
         grid = empty(3, 9)
         grid[1][0] = 'A'

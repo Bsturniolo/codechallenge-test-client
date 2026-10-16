@@ -62,3 +62,9 @@ DANGER_CHAR = '\ue000'
 # con al menos esta fracción del mejor territorio, y entre ellos se elige
 # el que queda más cerca del dígito objetivo.
 TERRITORY_TOLERANCE = 0.9
+
+# Estimación para decidir entre una 'X' y el dígito objetivo: cada 'X'
+# suma +50 y un punto de multiplicador, que vale (dígito promedio * 100)
+# en cada comida futura.
+MULTIPLIER_PICKUP_POINTS = 50
+EXPECTED_DIGIT = 5

@@ -3,7 +3,8 @@
 from dataclasses import dataclass
 
 from bot.constants import (
-    DANGER_CHAR, DIGIT_CHARS, DIRS, MIN_REMAINING_MOVES_FOR_ACCUMULATION,
+    DANGER_CHAR, DIGIT_CHARS, DIRS, EXPECTED_DIGIT,
+    MIN_REMAINING_MOVES_FOR_ACCUMULATION, MULTIPLIER_PICKUP_POINTS,
     MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_BUDGET_FACTOR,
     MULTIPLIER_CHAR, PATH_SAFETY_DEPTH,
     TAIL_FOOD, TAIL_FOOD_DETOUR_MAX, TERRITORY_TOLERANCE, WALL_CHAR,
@@ -167,10 +168,31 @@ class MovePlanner:
 
     def _accumulate(self):
         """Fase de acumulación: ir por una ``X`` segura (v4)."""
-        if self._accumulating():
-            return self.try_reach_char(
-                MULTIPLIER_CHAR, self._multiplier_budget())
-        return None
+        if not self._accumulating():
+            return None
+        budget = self._multiplier_budget()
+        path = self._reachable_path(MULTIPLIER_CHAR, budget)
+        if path is None or self._digit_beats_x(len(path)):
+            return None
+        return self.try_reach_char(MULTIPLIER_CHAR, budget)
+
+    def _digit_beats_x(self, x_len):
+        """True si el dígito objetivo rinde más puntos por paso que la ``X``.
+
+        Estimación: comer vale ``dígito * 100 * multiplicador``. Una ``X``
+        suma su bonus más ``EXPECTED_DIGIT * 100`` por cada comida que
+        alcance a hacer con los movimientos que queden, suponiendo que
+        cada comida cuesta lo que hoy cuesta llegar al dígito.
+        """
+        digit_path = self.board.path_to_char(
+            self.head, self.blocked, self.target_char)
+        if self.remaining_moves is None or not digit_path:
+            return False
+        digit_len = len(digit_path)
+        eats_left = max(self.remaining_moves // 2 - x_len, 0) / digit_len
+        x_points = MULTIPLIER_PICKUP_POINTS + EXPECTED_DIGIT * 100 * eats_left
+        digit_points = int(self.target_char) * 100 * self.own_multiplier
+        return digit_points / digit_len >= x_points / x_len
 
     def _multiplier_budget(self):
         """Pasos máximos que vale la pena gastar en una ``X``.
