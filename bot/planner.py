@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from bot.constants import (
-    DANGER_CHAR, DIGIT_CHARS, DIRS, EXPECTED_DIGIT,
+    DANGER_CHAR, DIGIT_CHARS, DIGIT_PRIORITY, DIRS, EXPECTED_DIGIT,
     MIN_REMAINING_MOVES_FOR_ACCUMULATION, MULTIPLIER_PICKUP_POINTS,
     MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_BUDGET_FACTOR,
     MULTIPLIER_CHAR, PATH_SAFETY_DEPTH,
@@ -192,7 +192,8 @@ class MovePlanner:
         eats_left = max(self.remaining_moves // 2 - x_len, 0) / digit_len
         x_points = MULTIPLIER_PICKUP_POINTS + EXPECTED_DIGIT * 100 * eats_left
         digit_points = int(self.target_char) * 100 * self.own_multiplier
-        return digit_points / digit_len >= x_points / x_len
+        digit_rate = DIGIT_PRIORITY * digit_points / digit_len
+        return digit_rate >= x_points / x_len
 
     def _multiplier_budget(self):
         """Pasos máximos que vale la pena gastar en una ``X``.

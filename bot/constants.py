@@ -71,3 +71,8 @@ EXPECTED_DIGIT = 5
 
 # Carpeta donde se guardan los logs de cada partida (se crea sola).
 LOG_DIR = 'partidas'
+
+# Agresividad: el dígito objetivo se prefiere a una 'X' aunque rinda hasta
+# esta cantidad de veces menos puntos por paso. Con 1 es neutral; más alto
+# come antes y junta menos multiplicadores.
+DIGIT_PRIORITY = 1.5
