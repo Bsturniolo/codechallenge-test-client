@@ -8,11 +8,11 @@
 | bot/client.py     |       68 |        0 |     100% |           |
 | bot/constants.py  |       20 |        0 |     100% |           |
 | bot/logger.py     |       26 |        0 |     100% |           |
-| bot/planner.py    |      194 |        0 |     100% |           |
+| bot/planner.py    |      197 |        0 |     100% |           |
 | bot/protocol.py   |        5 |        0 |     100% |           |
 | bot/snake\_bot.py |       39 |        0 |     100% |           |
 | run.py            |        8 |        0 |     100% |           |
-| **TOTAL**         |  **489** |    **0** | **100%** |           |
+| **TOTAL**         |  **492** |    **0** | **100%** |           |
 
 
 ## Setup coverage badge
