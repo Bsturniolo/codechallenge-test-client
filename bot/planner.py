@@ -6,7 +6,7 @@ from bot.constants import (
     DANGER_CHAR, DIGIT_CHARS, DIRS, MIN_REMAINING_MOVES_FOR_ACCUMULATION,
     MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_BUDGET_FACTOR,
     MULTIPLIER_CHAR, PATH_SAFETY_DEPTH,
-    TAIL_FOOD, TAIL_FOOD_DETOUR_MAX, WALL_CHAR,
+    TAIL_FOOD, TAIL_FOOD_DETOUR_MAX, TERRITORY_TOLERANCE, WALL_CHAR,
 )
 
 
@@ -245,17 +245,35 @@ class MovePlanner:
             return self.step_territory(cell)
         return self.step_area(cell)
 
-    def _territory_move(self):
-        """Mejor paso por territorio cuando no hay comida alcanzable."""
-        best_dir, best_score = None, -1
+    def _target_distance(self, cell):
+        """Pasos desde ``cell`` al dígito objetivo más cercano."""
+        goals = self.board.positions(self.target_char)
+        reach = self.board.distances(cell, self.lookahead_blocked)
+        found = [reach[goal] for goal in goals if goal in reach]
+        return min(found) if found else float('inf')
+
+    def _scored_steps(self):
+        """``{direccion: (celda, puntaje)}`` de los pasos viables."""
+        steps = {}
         for name in DIRS:
             cell = self._viable_step(name)
-            if cell is None:
-                continue
-            score = self._score_step(cell)
-            if score > best_score:
-                best_dir, best_score = name, score
-        return (best_dir, None) if best_dir else None
+            if cell is not None:
+                steps[name] = (cell, self._score_step(cell))
+        return steps
+
+    def _territory_move(self):
+        """Paso por territorio cuando no hay comida alcanzable.
+
+        Entre los pasos cuyo territorio es casi el mejor, prefiere el que
+        acerca al dígito objetivo en vez de dar vueltas sin rumbo.
+        """
+        steps = self._scored_steps()
+        if not steps:
+            return None
+        limit = TERRITORY_TOLERANCE * max(s for _, s in steps.values())
+        near = [(self._target_distance(cell), name)
+                for name, (cell, score) in steps.items() if score >= limit]
+        return min(near)[1], None
 
     def _resort_cost(self, char):
         """Costo aproximado de pisar ``char`` (menor es mejor)."""

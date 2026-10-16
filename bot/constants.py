@@ -57,3 +57,8 @@ BOMB_RADII = {'\U0001F4A3': 2, '\U0001F9E8': 1}
 # Marca interna (no existe en el juego) para las celdas dentro de la
 # zona de explosión de alguna bomba: el bot las trata como prohibidas.
 DANGER_CHAR = '\ue000'
+
+# Al moverse por territorio (sin comida alcanzable) se aceptan los pasos
+# con al menos esta fracción del mejor territorio, y entre ellos se elige
+# el que queda más cerca del dígito objetivo.
+TERRITORY_TOLERANCE = 0.9

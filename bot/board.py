@@ -45,6 +45,11 @@ class Board:
                 return (row_index, row.index(char))
         return None
 
+    def positions(self, char):
+        """Todas las posiciones donde aparece ``char``."""
+        return [(r, c) for r, row in enumerate(self.grid)
+                for c, value in enumerate(row) if value == char]
+
     def count(self, char):
         """Cantidad de veces que aparece ``char`` en el tablero."""
         return sum(row.count(char) for row in self.grid)

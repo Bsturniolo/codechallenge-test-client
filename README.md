@@ -61,7 +61,9 @@ da una jugada:
 
 1. **Acumular multiplicador (v4):** mientras el multiplicador propio sea
    menor a `MULTIPLIER_ACCUMULATION_CAP` (16) y queden suficientes
-   movimientos, va por una `X` segura.
+   movimientos, va por una `X` segura, pero solo si el camino cuesta menos
+   de `movimientos propios restantes * MULTIPLIER_BUDGET_FACTOR / multiplicador`
+   pasos (si el multiplicador ya es alto, solo vale una `X` muy cercana).
 2. **Comida de cola propia (v7):** `Ⓐ`/`Ⓑ` de nuestra letra a 2 pasos o
    menos.
 3. **Dígito correcto:** evalúa las 4 direcciones, descarta las que
@@ -69,8 +71,11 @@ da una jugada:
    rutas que el rival no pueda disputar. Con varias copias (v6) va a la más
    cercana.
 4. **`X` o comida de cola** si el dígito no es alcanzable con seguridad.
-5. **Territorio:** el paso que controla más celdas antes que el rival.
-6. **Último recurso:** cualquier movimiento legal; la pared recién al final.
+5. **Territorio:** entre los pasos que controlan casi tantas celdas como el
+   mejor (`TERRITORY_TOLERANCE`), el que queda más cerca del dígito objetivo.
+6. **Último recurso:** el paso menos costoso (celda libre, dígito
+   incorrecto, zona de bomba, cabeza rival, pared, cuerpo) y, a igual
+   costo, el que deja más espacio libre.
 
 Siempre evita dígitos incorrectos, cuerpos, la pared `#`, y no se acerca a
 la cabeza del rival si este es estrictamente más largo.
@@ -79,8 +84,8 @@ la cabeza del rival si este es estrictamente más largo.
 dentro de la zona de explosión de alguna bomba. Como cada celda de un camino
 es el final de un movimiento, el bot no pisa ninguna celda de la zona, ni en
 el destino ni de paso. Como el juego nunca pone comida dentro de una zona, evitarlas no
-cuesta puntos. Solo si no queda otra opción, el último recurso elige primero
-una celda normal, después una zona de bomba y por último la pared.
+cuesta puntos. Solo si no queda otra opción, el último recurso pisa la zona de una bomba
+(antes que la cabeza rival, la pared o un cuerpo).
 
 ## Tests
 

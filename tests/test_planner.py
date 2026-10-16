@@ -236,6 +236,23 @@ class TestMultiplierX(unittest.TestCase):
             grid, own_multiplier=10, remaining_moves=60)
         self.assertEqual(direction, 'up')
 
+    def test_territory_move_heads_toward_target(self):
+        grid = empty(5, 9)
+        grid[2][4] = 'A'
+        grid[2][8] = '1'
+        planner = planner_for(grid)
+        self.assertEqual(planner._territory_move(), ('right', None))
+
+    def test_target_distance_infinite_without_target(self):
+        grid = empty(3, 5)
+        grid[1][2] = 'A'
+        planner = planner_for(grid)
+        self.assertEqual(planner._target_distance((1, 3)), float('inf'))
+
+    def test_territory_move_none_when_boxed_in(self):
+        grid = [list('aba'), list('bAb'), list('aba')]
+        self.assertIsNone(planner_for(grid)._territory_move())
+
     def test_contested_x_is_rejected(self):
         grid = empty(3, 9)
         grid[1][0] = 'A'

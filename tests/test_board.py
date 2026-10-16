@@ -7,6 +7,19 @@ from bot.constants import DANGER_CHAR
 from tests.helpers import board_str, empty
 
 
+class TestPositions(unittest.TestCase):
+    """Búsqueda de todas las apariciones de un carácter."""
+
+    def test_positions_lists_every_occurrence(self):
+        grid = empty(3, 4)
+        grid[0][1] = '5'
+        grid[2][3] = '5'
+        self.assertEqual(Board(grid).positions('5'), [(0, 1), (2, 3)])
+
+    def test_positions_empty_when_absent(self):
+        self.assertEqual(Board(empty(2, 2)).positions('5'), [])
+
+
 class TestParsing(unittest.TestCase):
     """Lectura del string del servidor."""
 
