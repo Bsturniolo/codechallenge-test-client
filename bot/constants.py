@@ -75,7 +75,7 @@ LOG_DIR = 'partidas'
 # Agresividad: el dígito objetivo se prefiere a una 'X' aunque rinda hasta
 # esta cantidad de veces menos puntos por paso. Con 1 es neutral; más alto
 # come antes y junta menos multiplicadores.
-DIGIT_PRIORITY = 2
+DIGIT_PRIORITY = 1
 
 # Entre varias copias del dígito objetivo se prefiere la que deja más cerca
 # al dígito siguiente: costo = pasos + este peso * distancia al siguiente.
