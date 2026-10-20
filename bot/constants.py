@@ -75,8 +75,13 @@ LOG_DIR = 'partidas'
 # Agresividad: el dígito objetivo se prefiere a una 'X' aunque rinda hasta
 # esta cantidad de veces menos puntos por paso. Con 1 es neutral; más alto
 # come antes y junta menos multiplicadores.
-DIGIT_PRIORITY = 1.5
+DIGIT_PRIORITY = 2
 
 # Entre varias copias del dígito objetivo se prefiere la que deja más cerca
 # al dígito siguiente: costo = pasos + este peso * distancia al siguiente.
 FOLLOW_UP_WEIGHT = 0.5
+
+# Pasos por comida que se suponen como mínimo al estimar cuántas comidas
+# alcanza a hacer una 'X'. Medido en las partidas contra el mejor rival:
+# comía cada ~12 movimientos propios (200 / 17 comidas).
+MIN_MOVES_PER_EAT = 12

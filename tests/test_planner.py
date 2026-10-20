@@ -277,7 +277,7 @@ class TestMultiplierX(unittest.TestCase):
     def test_digit_priority_biases_toward_eating(self):
         grid = self._x_vs_digit_grid(3)
         planner = planner_for(
-            grid, target_digit=9, own_multiplier=6, remaining_moves=100)
+            grid, target_digit=9, own_multiplier=2, remaining_moves=100)
         self.assertTrue(planner._digit_beats_x(3))
         with patch('bot.planner.DIGIT_PRIORITY', 1):
             self.assertFalse(planner._digit_beats_x(3))
