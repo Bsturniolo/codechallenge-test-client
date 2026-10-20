@@ -347,8 +347,29 @@ class TestV6Copies(unittest.TestCase):
         grid[1][7] = 'A'
         grid[1][3] = '1'
         grid[1][9] = '1'
-        grid[0][0] = '2'
+        grid[0][14] = '2'
         self.assertEqual(choose(grid), ('right', (1, 9)))
+
+    def test_prefers_copy_close_to_next_digit(self):
+        grid = empty(3, 15)
+        grid[1][7] = 'A'
+        grid[1][3] = '1'
+        grid[1][9] = '1'
+        grid[0][0] = '2'
+        self.assertEqual(choose(grid), ('left', (1, 3)))
+
+    def test_follow_up_distance_zero_without_next_digit(self):
+        grid = empty(3, 9)
+        grid[1][4] = 'A'
+        grid[1][7] = '1'
+        planner = planner_for(grid)
+        self.assertEqual(planner._follow_up_distance((1, 7)), 0)
+
+    def test_next_digit_wraps_from_nine_to_one(self):
+        grid = empty(3, 5)
+        grid[1][2] = 'A'
+        planner = planner_for(grid, target_digit=9)
+        self.assertEqual(planner._next_digit_char(), '1')
 
     def test_wrong_digit_copies_are_obstacles(self):
         grid = empty(3, 7)

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from bot.constants import (
     DANGER_CHAR, DIGIT_CHARS, DIGIT_PRIORITY, DIRS, EXPECTED_DIGIT,
+    FOLLOW_UP_WEIGHT,
     MIN_REMAINING_MOVES_FOR_ACCUMULATION, MULTIPLIER_PICKUP_POINTS,
     MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_BUDGET_FACTOR,
     MULTIPLIER_CHAR, PATH_SAFETY_DEPTH,
@@ -258,9 +259,29 @@ class MovePlanner:
         """Ir por el dígito correcto, prefiriendo rutas no disputadas."""
         for pool in self._split_candidates():
             if pool:
-                best = min(pool, key=lambda entry: entry[0])
+                best = min(pool, key=self._pursue_cost)
                 return best[1], best[2]
         return None
+
+    def _next_digit_char(self):
+        """Dígito que toca después del objetivo (el 9 vuelve al 1)."""
+        return str(int(self.target_char) % 9 + 1)
+
+    def _follow_up_distance(self, cell):
+        """Pasos desde ``cell`` a la copia más cercana del dígito siguiente.
+
+        Es 0 si no hay ninguna alcanzable: no cambia la elección.
+        """
+        following = self._next_digit_char()
+        reach = self.board.distances(cell, self.blocked - {following})
+        found = [reach[pos] for pos in self.board.positions(following)
+                 if pos in reach]
+        return min(found) if found else 0
+
+    def _pursue_cost(self, entry):
+        """Costo de una ruta: pasos más la distancia al dígito siguiente."""
+        length, _, end = entry
+        return length + FOLLOW_UP_WEIGHT * self._follow_up_distance(end)
 
     def _score_step(self, cell):
         """Puntaje de un paso: territorio con rival, área sin rival."""
