@@ -76,3 +76,7 @@ LOG_DIR = 'partidas'
 # esta cantidad de veces menos puntos por paso. Con 1 es neutral; más alto
 # come antes y junta menos multiplicadores.
 DIGIT_PRIORITY = 1.5
+
+# Entre varias copias del dígito objetivo se prefiere la que deja más cerca
+# al dígito siguiente: costo = pasos + este peso * distancia al siguiente.
+FOLLOW_UP_WEIGHT = 0.5
