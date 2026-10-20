@@ -65,7 +65,7 @@ da una jugada:
    movimientos, va por una `X` segura, pero solo si el camino cuesta menos
    de `movimientos propios restantes * MULTIPLIER_BUDGET_FACTOR / multiplicador`
    pasos, y además solo si rinde más puntos por paso que comer el dígito
-   objetivo (`DIGIT_PRIORITY` lo inclina hacia comer; un 8 o 9 con multiplicador alto se come antes que una `X`
+   objetivo (`DIGIT_PRIORITY` (2) lo inclina hacia comer y `MIN_MOVES_PER_EAT` (12) evita sobreestimar lo que rinde una `X`; un 8 o 9 con multiplicador alto se come antes que una `X`
    lejana).
 2. **Comida de cola propia (v7):** `Ⓐ`/`Ⓑ` de nuestra letra a 2 pasos o
    menos.

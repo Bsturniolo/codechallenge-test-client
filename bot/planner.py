@@ -4,10 +4,10 @@ from dataclasses import dataclass
 
 from bot.constants import (
     DANGER_CHAR, DIGIT_CHARS, DIGIT_PRIORITY, DIRS, EXPECTED_DIGIT,
-    FOLLOW_UP_WEIGHT,
-    MIN_REMAINING_MOVES_FOR_ACCUMULATION, MULTIPLIER_PICKUP_POINTS,
+    FOLLOW_UP_WEIGHT, MIN_MOVES_PER_EAT,
+    MIN_REMAINING_MOVES_FOR_ACCUMULATION,
     MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_BUDGET_FACTOR,
-    MULTIPLIER_CHAR, PATH_SAFETY_DEPTH,
+    MULTIPLIER_CHAR, MULTIPLIER_PICKUP_POINTS, PATH_SAFETY_DEPTH,
     TAIL_FOOD, TAIL_FOOD_DETOUR_MAX, TERRITORY_TOLERANCE, WALL_CHAR,
 )
 
@@ -190,7 +190,8 @@ class MovePlanner:
         if self.remaining_moves is None or not digit_path:
             return False
         digit_len = len(digit_path)
-        eats_left = max(self.remaining_moves // 2 - x_len, 0) / digit_len
+        per_eat = max(digit_len, MIN_MOVES_PER_EAT)
+        eats_left = max(self.remaining_moves // 2 - x_len, 0) / per_eat
         x_points = MULTIPLIER_PICKUP_POINTS + EXPECTED_DIGIT * 100 * eats_left
         digit_points = int(self.target_char) * 100 * self.own_multiplier
         digit_rate = DIGIT_PRIORITY * digit_points / digit_len
