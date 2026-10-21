@@ -6,13 +6,14 @@
 |------------------ | -------: | -------: | -------: | --------: |
 | bot/board.py      |      129 |        0 |     100% |           |
 | bot/client.py     |       68 |        0 |     100% |           |
-| bot/constants.py  |       23 |        0 |     100% |           |
+| bot/constants.py  |       31 |        0 |     100% |           |
 | bot/logger.py     |       26 |        0 |     100% |           |
 | bot/planner.py    |      213 |        0 |     100% |           |
 | bot/protocol.py   |        5 |        0 |     100% |           |
-| bot/snake\_bot.py |       45 |        0 |     100% |           |
+| bot/shooter.py    |       58 |        0 |     100% |           |
+| bot/snake\_bot.py |       73 |        0 |     100% |           |
 | run.py            |        8 |        0 |     100% |           |
-| **TOTAL**         |  **517** |    **0** | **100%** |           |
+| **TOTAL**         |  **611** |    **0** | **100%** |           |
 
 
 ## Setup coverage badge
