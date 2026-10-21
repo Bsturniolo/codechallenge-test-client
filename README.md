@@ -10,9 +10,9 @@
 | bot/logger.py     |       26 |        0 |     100% |           |
 | bot/planner.py    |      213 |        0 |     100% |           |
 | bot/protocol.py   |        5 |        0 |     100% |           |
-| bot/snake\_bot.py |       39 |        0 |     100% |           |
+| bot/snake\_bot.py |       45 |        0 |     100% |           |
 | run.py            |        8 |        0 |     100% |           |
-| **TOTAL**         |  **511** |    **0** | **100%** |           |
+| **TOTAL**         |  **517** |    **0** | **100%** |           |
 
 
 ## Setup coverage badge
