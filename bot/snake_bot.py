@@ -6,6 +6,7 @@ from bot.board import Board
 from bot.constants import DIRS, STARTING_DIGIT, WALL_CHAR
 from bot.planner import MovePlanner, Side, opposite
 from bot.protocol import send
+from bot.shooter import Shooter
 
 
 class SnakeBot:
@@ -14,6 +15,7 @@ class SnakeBot:
     def __init__(self, logger):
         """Recibe el ``GameLogger`` donde se anotan las acciones."""
         self.logger = logger
+        self.shooter = Shooter()
 
     @staticmethod
     def multipliers(data):
@@ -68,14 +70,56 @@ class SnakeBot:
             print('error al decidir, se juega al azar: {!r}'.format(error))
             return self.random_direction()
 
-    async def handle_turn(self, websocket, request_data):
-        """Decide y envía el movimiento del turno."""
-        data = request_data['data']
-        move = {
+    @staticmethod
+    def _number(data, key, default=0):
+        """Valor numérico de ``data[key]`` o ``default`` si falta."""
+        return data.get(key) or default
+
+    def shot_state(self, data):
+        """Datos del turno que usa el ``Shooter``, según nuestro lado."""
+        mine, theirs = 'score_1', 'score_2'
+        if data['side'] != 'A':
+            mine, theirs = theirs, mine
+        return {
+            'game_id': data['game_id'],
+            'score': self._number(data, mine),
+            'rival_score': self._number(data, theirs),
+            'own_moves_left': self._number(data, 'remaining_moves') // 2,
+            'multiplier': self.multipliers(data)[0] or 1,
+        }
+
+    def shot_direction(self, data):
+        """Dirección de disparo (v9) o ``None``; nunca lanza excepciones."""
+        try:
+            board = Board.from_string(data['board'])
+            head = board.find(data['side'])
+            if head is None:
+                return None
+            opp = Side.from_letter(opposite(data['side']))
+            return self.shooter.decide(
+                board, head, opp, self.shot_state(data))
+        except Exception as error:
+            print('error al evaluar el disparo: {!r}'.format(error))
+            return None
+
+    async def _send_action(self, websocket, action, data, direction):
+        """Registra y envía un ``move`` o ``shoot`` con su dirección."""
+        message = {
             'game_id': data['game_id'],
             'turn_token': data['turn_token'],
-            'direction': self.decide(data),
+            'direction': direction,
         }
         self.logger.log_action(
-            move['game_id'], {'action': 'move', 'data': move})
-        await send(websocket, 'move', move)
+            message['game_id'], {'action': action, 'data': message})
+        await send(websocket, action, message)
+
+    async def handle_turn(self, websocket, request_data):
+        """Dispara si conviene; si no, decide y envía el movimiento."""
+        data = request_data['data']
+        shot = self.shot_direction(data)
+        if shot:
+            self.shooter.record(data['game_id'])
+            await self._send_action(websocket, 'shoot', data, shot)
+            return
+        await self._send_action(
+            websocket, 'move', data, self.decide(data))
