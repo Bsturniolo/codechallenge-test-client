@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from bot.constants import (
     DANGER_CHAR, DIGIT_CHARS, DIGIT_PRIORITY, DIRS, EXPECTED_DIGIT,
-    FOLLOW_UP_WEIGHT, MIN_MOVES_PER_EAT,
+    FOLLOW_UP_WEIGHT, FREE_FOOD_CHAR, MIN_MOVES_PER_EAT,
     MIN_REMAINING_MOVES_FOR_ACCUMULATION,
     MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_BUDGET_FACTOR,
     MULTIPLIER_CHAR, MULTIPLIER_PICKUP_POINTS, PATH_SAFETY_DEPTH,
@@ -212,14 +212,23 @@ class MovePlanner:
         return max(1, own_left * MULTIPLIER_BUDGET_FACTOR
                    // self.own_multiplier)
 
+    def _first_reachable(self, chars, max_len=None):
+        """Primer ``try_reach_char`` exitoso entre ``chars``."""
+        for char in chars:
+            found = self.try_reach_char(char, max_len)
+            if found:
+                return found
+        return None
+
     def _grab_tail(self):
-        """Comida de cola propia si está prácticamente de paso (v7)."""
-        return self.try_reach_char(self.own.tail, TAIL_FOOD_DETOUR_MAX)
+        """Comida de cola propia o libre ``*`` si está de paso (v7, v9)."""
+        return self._first_reachable(
+            (self.own.tail, FREE_FOOD_CHAR), TAIL_FOOD_DETOUR_MAX)
 
     def _opportunistic_bonus(self):
-        """``X`` o comida de cola cuando el dígito no es alcanzable."""
-        found = self.try_reach_char(MULTIPLIER_CHAR)
-        return found or self.try_reach_char(self.own.tail)
+        """``X`` o comida (de cola o libre) si el dígito no es alcanzable."""
+        return self._first_reachable(
+            (MULTIPLIER_CHAR, self.own.tail, FREE_FOOD_CHAR))
 
     def _sub_path(self, cell):
         """Camino desde ``cell`` al dígito objetivo (``[]`` si es él)."""
