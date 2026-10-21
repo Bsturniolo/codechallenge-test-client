@@ -1,9 +1,10 @@
 """Disparos (v9): cuándo vale la pena gastar 5000 puntos en cortar al rival."""
 
 from bot.constants import (
-    DIRS, MAX_SHOTS_PER_GAME, SHOOTING_ENABLED, SHOT_COST,
-    SHOT_LEAD_LIMIT, SHOT_MIN_OWN_MOVES_LEFT, SHOT_MIN_RETURN,
-    SHOT_MIN_SCORE_LEFT, SHOT_RECOVERY_SHARE, WALL_CHAR)
+    DIRS, MAX_SHOTS_PER_GAME, MAX_SHOTS_WHEN_BEHIND, SHOOTING_ENABLED,
+    SHOT_BEHIND_GAP, SHOT_COST, SHOT_LEAD_LIMIT, SHOT_MIN_OWN_MOVES_LEFT,
+    SHOT_MIN_RETURN, SHOT_MIN_RETURN_WHEN_BEHIND, SHOT_MIN_SCORE_LEFT,
+    SHOT_RECOVERY_SHARE, WALL_CHAR)
 
 
 def ray_hit(board, head, name, opp):
@@ -61,7 +62,11 @@ def cut_cells(board, opp, hit):
 
 
 class Shooter:
-    """Decide si disparar; como mucho ``MAX_SHOTS_PER_GAME`` por partida."""
+    """Decide si disparar: un tiro a la cabeza o el que más daño haga.
+
+    El disparo es instantáneo, así que apuntar bien lo hace efectivo al
+    100 %. Lo que se evalúa es si las celdas cortadas pagan el costo.
+    """
 
     def __init__(self):
         """Empieza sin disparos hechos."""
@@ -71,32 +76,50 @@ class Shooter:
         """Anota un disparo en la partida."""
         self.shots[game_id] = self.shots.get(game_id, 0) + 1
 
-    def _allowed(self, game_id, score, rival_score, own_moves_left):
+    @staticmethod
+    def limits(state):
+        """``(máx. disparos, retorno mínimo)``; más agresivo si vamos atrás."""
+        behind = state['rival_score'] - state['score']
+        if behind >= SHOT_BEHIND_GAP:
+            return MAX_SHOTS_WHEN_BEHIND, SHOT_MIN_RETURN_WHEN_BEHIND
+        return MAX_SHOTS_PER_GAME, SHOT_MIN_RETURN
+
+    def _allowed(self, state, max_shots):
         """Condiciones generales: interruptor, saldo, tiempo y ventaja."""
         checks = (
             SHOOTING_ENABLED,
-            self.shots.get(game_id, 0) < MAX_SHOTS_PER_GAME,
-            score - SHOT_COST >= SHOT_MIN_SCORE_LEFT,
-            own_moves_left >= SHOT_MIN_OWN_MOVES_LEFT,
-            score - rival_score <= SHOT_LEAD_LIMIT,
+            self.shots.get(state['game_id'], 0) < max_shots,
+            state['score'] - SHOT_COST >= SHOT_MIN_SCORE_LEFT,
+            state['own_moves_left'] >= SHOT_MIN_OWN_MOVES_LEFT,
+            state['score'] - state['rival_score'] <= SHOT_LEAD_LIMIT,
         )
         return all(checks)
 
     @staticmethod
-    def worth_it(cells, multiplier):
+    def worth_it(cells, multiplier, min_return=SHOT_MIN_RETURN):
         """True si lo que se espera recuperar paga el disparo."""
         gain = cells * 100 * multiplier * SHOT_RECOVERY_SHARE
-        return gain >= SHOT_COST * SHOT_MIN_RETURN
+        return gain >= SHOT_COST * min_return
 
-    def best_direction(self, board, head, opp, multiplier):
-        """Dirección que más celdas corta y paga el disparo, o ``None``."""
-        best, best_cells = None, 0
+    @staticmethod
+    def _shot_options(board, head, opp):
+        """``(celdas cortadas, es a la cabeza, dirección)`` de cada tiro."""
+        options = []
+        rival_head = board.find(opp.head)
         for name in DIRS:
             hit = ray_hit(board, head, name, opp)
-            cells = cut_cells(board, opp, hit) if hit else 0
-            if cells > best_cells and self.worth_it(cells, multiplier):
-                best, best_cells = name, cells
-        return best
+            if hit:
+                cells = cut_cells(board, opp, hit)
+                options.append((cells, hit == rival_head, name))
+        return options
+
+    def best_direction(self, board, head, opp, multiplier, min_return):
+        """Mejor tiro (cabeza primero, luego más celdas) o ``None``."""
+        options = self._shot_options(board, head, opp)
+        for cells, _, name in sorted(options, reverse=True):
+            if self.worth_it(cells, multiplier, min_return):
+                return name
+        return None
 
     def decide(self, board, head, opp, state):
         """Dirección de disparo o ``None``.
@@ -104,7 +127,8 @@ class Shooter:
         ``state`` trae ``game_id``, ``score``, ``rival_score``,
         ``own_moves_left`` y ``multiplier``.
         """
-        if not self._allowed(state['game_id'], state['score'],
-                             state['rival_score'], state['own_moves_left']):
+        max_shots, min_return = self.limits(state)
+        if not self._allowed(state, max_shots):
             return None
-        return self.best_direction(board, head, opp, state['multiplier'])
+        return self.best_direction(
+            board, head, opp, state['multiplier'], min_return)

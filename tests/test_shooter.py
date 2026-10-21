@@ -142,6 +142,70 @@ class TestShooter(unittest.TestCase):
         self.assertIsNone(shooter.decide(board(), (11, 0), OPP, state()))
 
 
+def rows_with_two_lines_of_fire():
+    """Rival en L; nosotros en (4, 6): arriba pega en su cabeza (10
+    celdas) y a la izquierda en su cuerpo (3 celdas)."""
+    rows = [' ' * 8 for _ in range(8)]
+    rows[2] = 'bbbbbbB '
+    for row in (3, 4, 5, 6):
+        rows[row] = 'b' + ' ' * 7
+    rows[4] = 'b' + ' ' * 5 + 'A' + ' '
+    return rows
+
+
+class TestAim(unittest.TestCase):
+    """Elegir el tiro: a la cabeza o donde más daño haga."""
+
+    def test_prefers_the_head_shot_over_a_body_shot(self):
+        wide = Board.from_string(board_str(rows_with_two_lines_of_fire()))
+        shooter = Shooter()
+        options = sorted(shooter._shot_options(wide, (4, 6), OPP))
+        self.assertEqual([name for *_, name in options], ['left', 'up'])
+        self.assertEqual(options[-1][:2], (10, True))
+        self.assertEqual(
+            shooter.best_direction(wide, (4, 6), OPP, 30, 1.5), 'up')
+
+    def test_falls_back_to_a_body_shot_if_head_shot_is_missing(self):
+        shooter = Shooter()
+        wide = Board.from_string(board_str(rows_with_two_lines_of_fire()))
+        with patch.object(Shooter, 'worth_it', side_effect=[False, True]):
+            self.assertEqual(
+                shooter.best_direction(wide, (4, 6), OPP, 30, 1.5), 'left')
+
+    def test_no_shot_when_none_pays(self):
+        wide = Board.from_string(board_str(rows_with_two_lines_of_fire()))
+        self.assertIsNone(
+            Shooter().best_direction(wide, (4, 6), OPP, 1, 1.5))
+
+
+class TestWhenBehind(unittest.TestCase):
+    """Si el rival va muy adelante se dispara más seguido."""
+
+    def setUp(self):
+        self.shooter = Shooter()
+
+    def decide(self, **extra):
+        return self.shooter.decide(
+            board(), (0, 8), OPP, state(multiplier=20, **extra))
+
+    def test_even_game_does_not_pay_with_multiplier_20(self):
+        self.assertIsNone(self.decide())
+
+    def test_behind_game_accepts_a_smaller_return(self):
+        self.assertEqual(self.decide(score=20000, rival_score=40000), 'down')
+
+    def test_behind_game_allows_a_second_shot_but_not_a_third(self):
+        self.shooter.record('g')
+        self.assertEqual(self.decide(score=20000, rival_score=40000), 'down')
+        self.shooter.record('g')
+        self.assertIsNone(self.decide(score=20000, rival_score=40000))
+
+    def test_limits(self):
+        self.assertEqual(Shooter.limits(state()), (1, 1.5))
+        self.assertEqual(
+            Shooter.limits(state(score=0, rival_score=20000)), (2, 1.0))
+
+
 class TestBotShooting(unittest.TestCase):
     """El bot manda ``shoot`` en vez de ``move`` cuando corresponde."""
 
