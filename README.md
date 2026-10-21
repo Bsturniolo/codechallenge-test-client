@@ -39,6 +39,7 @@ bot/
   snake_bot.py         SnakeBot: convierte un turno del servidor en una jugada
   client.py            GameClient: conexión, reconexión y eventos
   logger.py            GameLogger: logs por partida
+  shooter.py           Shooter: cuándo disparar (v9)
   protocol.py          send(): envío de mensajes
 tests/                 Tests unittest (+ tests/data con partidas reales)
 .github/workflows/     CI: lint.yml, tests.yml, complexity.yml
@@ -90,6 +91,17 @@ el destino ni de paso. Como el juego nunca pone comida dentro de una zona, evita
 cuesta puntos. Solo si no queda otra opción, el último recurso pisa la zona de una bomba
 (antes que la cabeza rival, la pared o un cuerpo).
 
+**Disparos (v9):** `bot/shooter.py` (`Shooter`) decide si disparar. Solo
+dispara si (1) la línea de tiro pega en la serpiente rival, (2) después de
+pagar `SHOT_COST` (5000) quedan al menos `SHOT_MIN_SCORE_LEFT` puntos, (3)
+quedan 40 o más movimientos propios, (4) no vamos ganando por más de
+`SHOT_LEAD_LIMIT`, (5) lo que se espera recuperar de las celdas cortadas
+(`celdas * 100 * multiplicador * SHOT_RECOVERY_SHARE`) es al menos
+`SHOT_MIN_RETURN` veces el costo, y (6) todavía no disparó en esa partida
+(`MAX_SHOTS_PER_GAME = 1`). Para saber cuántas celdas se cortan reconstruye
+el orden de la serpiente rival desde la cabeza. `SHOOTING_ENABLED = False`
+en `bot/constants.py` apaga los disparos.
+
 ## Tests
 
 ```bash
@@ -136,7 +148,7 @@ xenon --max-absolute A --max-modules A --max-average A bot run.py
 | v6 | 30 sep 2026 | Cada dígito aparece en 3–5 copias; solo una copia da puntos. |
 | v7 | 7 oct 2026 | Partidas de 400 movimientos. Chocar ya no termina la partida: la serpiente no se mueve, conserva 3 celdas y suelta comida de cola `Ⓐ`/`Ⓑ` para el rival. Primer choque: puntaje a 0; luego −500; bajo −2500 se pierde. |
 | v8 | 14 oct 2026 | Bombas `💣` (zona 5×5) y `🧨` (zona 3×3): explotan si la cabeza termina un movimiento a distancia Chebyshev ≤ 2 (`💣`) o ≤ 1 (`🧨`). La explosión deja el puntaje en 0 (o −500 si ya era ≤ 0), pero el movimiento se hace igual. Nunca hay comida ni `X` dentro de una zona. Tras la ronda 150 desaparecen todas las bombas. Tableros de 20 a 30 por lado. |
-| v9 | 21 oct 2026 | Disparos: `{"action": "shoot", "data": {"direction": ...}}` cuesta 5000 puntos (inválido, −500, con menos de 5000), no mueve la snake y corta a la rival desde la celda impactada hasta la cola. Las celdas cortadas pasan a ser comida `*` (+100 × multiplicador, +1 de largo, la come cualquiera). **El bot todavía no dispara**, pero trata `*` como comida y no como obstáculo. |
+| v9 | 21 oct 2026 | Disparos: `{"action": "shoot", "data": {"direction": ...}}` cuesta 5000 puntos (inválido, −500, con menos de 5000), no mueve la snake y corta a la rival desde la celda impactada hasta la cola. Las celdas cortadas pasan a ser comida `*` (+100 × multiplicador, +1 de largo, la come cualquiera). El bot trata `*` como comida y dispara a lo sumo una vez por partida (ver abajo). |
 
 ## Protocolo
 

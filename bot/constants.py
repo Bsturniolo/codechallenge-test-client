@@ -89,3 +89,32 @@ FOLLOW_UP_WEIGHT = 0.5
 # alcanza a hacer una 'X'. Medido en las partidas contra el mejor rival:
 # comía cada ~12 movimientos propios (200 / 17 comidas).
 MIN_MOVES_PER_EAT = 12
+
+# --- v9: disparos --------------------------------------------------------
+# Interruptor general: en False el bot nunca dispara.
+SHOOTING_ENABLED = True
+
+# Cada disparo cuesta esto, pegue o no (y hace falta tenerlo para disparar).
+SHOT_COST = 5000
+
+# Máximo de disparos por partida: se dispara solo si hace falta.
+MAX_SHOTS_PER_GAME = 1
+
+# Puntaje mínimo que tiene que quedar después de pagar el disparo.
+SHOT_MIN_SCORE_LEFT = 5000
+
+# Qué parte de las celdas cortadas se espera comer nosotros (las puede
+# comer cualquiera de las dos serpientes).
+SHOT_RECOVERY_SHARE = 0.5
+
+# Con menos movimientos propios que estos ya no da tiempo a comer la comida.
+SHOT_MIN_OWN_MOVES_LEFT = 40
+
+# Lo que se espera recuperar tiene que ser al menos esta cantidad de veces
+# el costo del disparo (margen por si la estimación es optimista).
+SHOT_MIN_RETURN = 1.5
+
+# Si ya ganamos por más que esto, no se gasta un disparo.
+SHOT_LEAD_LIMIT = 20000
+
+# Comida libre que dejan las celdas cortadas (v9).
