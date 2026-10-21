@@ -91,16 +91,22 @@ el destino ni de paso. Como el juego nunca pone comida dentro de una zona, evita
 cuesta puntos. Solo si no queda otra opción, el último recurso pisa la zona de una bomba
 (antes que la cabeza rival, la pared o un cuerpo).
 
-**Disparos (v9):** `bot/shooter.py` (`Shooter`) decide si disparar. Solo
-dispara si (1) la línea de tiro pega en la serpiente rival, (2) después de
-pagar `SHOT_COST` (5000) quedan al menos `SHOT_MIN_SCORE_LEFT` puntos, (3)
-quedan 40 o más movimientos propios, (4) no vamos ganando por más de
-`SHOT_LEAD_LIMIT`, (5) lo que se espera recuperar de las celdas cortadas
+**Disparos (v9):** `bot/shooter.py` (`Shooter`) decide si disparar. El
+disparo es instantáneo, así que apuntar bien lo hace efectivo: prioriza el
+tiro a la cabeza (deja al rival solo con la cabeza) y, si no hay, el que
+corta más celdas; si ninguno paga, no dispara y sigue comiendo. Para saber
+cuántas celdas se cortan reconstruye el orden de la serpiente rival desde
+su cabeza. Solo dispara si (1) la línea de tiro pega, (2) después de pagar
+`SHOT_COST` (5000) quedan al menos `SHOT_MIN_SCORE_LEFT` puntos, (3) quedan
+40 o más movimientos propios, (4) no vamos ganando por más de
+`SHOT_LEAD_LIMIT`, (5) lo que se espera recuperar
 (`celdas * 100 * multiplicador * SHOT_RECOVERY_SHARE`) es al menos
-`SHOT_MIN_RETURN` veces el costo, y (6) todavía no disparó en esa partida
-(`MAX_SHOTS_PER_GAME = 1`). Para saber cuántas celdas se cortan reconstruye
-el orden de la serpiente rival desde la cabeza. `SHOOTING_ENABLED = False`
-en `bot/constants.py` apaga los disparos.
+`SHOT_MIN_RETURN` veces el costo y (6) no superó el máximo de disparos de
+la partida (`MAX_SHOTS_PER_GAME = 1`). Si el rival nos lleva por
+`SHOT_BEHIND_GAP` o más, juega más agresivo: hasta
+`MAX_SHOTS_WHEN_BEHIND` disparos y retorno mínimo
+`SHOT_MIN_RETURN_WHEN_BEHIND`. `SHOOTING_ENABLED = False` en
+`bot/constants.py` apaga los disparos.
 
 ## Tests
 

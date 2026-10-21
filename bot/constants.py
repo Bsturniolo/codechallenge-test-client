@@ -114,6 +114,12 @@ SHOT_MIN_OWN_MOVES_LEFT = 40
 # el costo del disparo (margen por si la estimación es optimista).
 SHOT_MIN_RETURN = 1.5
 
+# Si el rival nos lleva más que esto, se juega más agresivo: se permiten
+# más disparos y se exige menos retorno esperado (hay que descontar).
+SHOT_BEHIND_GAP = 15000
+MAX_SHOTS_WHEN_BEHIND = 2
+SHOT_MIN_RETURN_WHEN_BEHIND = 1.0
+
 # Si ya ganamos por más que esto, no se gasta un disparo.
 SHOT_LEAD_LIMIT = 20000
 
