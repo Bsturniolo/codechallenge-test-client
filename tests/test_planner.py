@@ -5,7 +5,8 @@ from unittest.mock import patch
 
 from bot.board import Board
 from bot.constants import (
-    DANGER_CHAR, DIRS, MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_BUDGET_FACTOR)
+    DANGER_CHAR, DIRS, FREE_FOOD_CHAR, MULTIPLIER_ACCUMULATION_CAP,
+    MULTIPLIER_BUDGET_FACTOR)
 from bot.planner import MovePlanner, Side, manhattan, opposite
 from tests.helpers import choose, empty, planner_for
 
@@ -511,6 +512,42 @@ class TestPlannerPieces(unittest.TestCase):
         planner = planner_for(grid)
         self.assertGreater(planner.step_area((0, 0)), 0)
         self.assertGreater(planner.step_territory((1, 1)), 0)
+
+
+class TestV9FreeFood(unittest.TestCase):
+    """v9: la comida libre ``*`` no es un obstáculo, es comida."""
+
+    def test_grabs_nearby_free_food(self):
+        grid = empty(3, 9)
+        grid[1][3] = 'A'
+        grid[1][5] = '*'
+        grid[1][8] = '1'
+        self.assertEqual(choose(grid), ('right', (1, 5)))
+
+    def test_ignores_far_free_food_for_the_digit(self):
+        grid = empty(3, 15)
+        grid[1][7] = 'A'
+        grid[1][14] = '*'
+        grid[1][2] = '1'
+        self.assertEqual(choose(grid)[0], 'left')
+
+    def test_free_food_when_digit_is_unreachable(self):
+        grid = empty(3, 9)
+        grid[1][3] = 'A'
+        grid[1][7] = '*'
+        self.assertEqual(choose(grid), ('right', (1, 7)))
+
+    def test_free_food_is_not_blocking(self):
+        planner = planner_for(self._grid_with_star())
+        self.assertNotIn(FREE_FOOD_CHAR, planner.blocked)
+        self.assertEqual(planner._resort_cost(FREE_FOOD_CHAR), 0)
+
+    @staticmethod
+    def _grid_with_star():
+        grid = empty(3, 5)
+        grid[1][2] = 'A'
+        grid[1][3] = '*'
+        return grid
 
 
 if __name__ == '__main__':

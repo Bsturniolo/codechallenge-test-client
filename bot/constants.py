@@ -29,6 +29,10 @@ WALL_CHAR = '#'
 # comer la serpiente de esa letra: Ⓐ (U+24B6) la A y Ⓑ (U+24B7) la B.
 TAIL_FOOD = {'A': 'Ⓐ', 'B': 'Ⓑ'}
 
+# Comida libre '*' (v9): celdas de una snake cortada por un disparo; la
+# puede comer cualquiera de las dos y vale +100 * multiplicador.
+FREE_FOOD_CHAR = '*'
+
 # Se desvía por la comida de cola propia solo si está a esta distancia.
 TAIL_FOOD_DETOUR_MAX = 2
 

@@ -67,8 +67,8 @@ da una jugada:
    pasos, y además solo si rinde más puntos por paso que comer el dígito
    objetivo (`DIGIT_PRIORITY` (1, neutral; más alto inclina hacia comer) y `MIN_MOVES_PER_EAT` (12) evita sobreestimar lo que rinde una `X`; un 8 o 9 con multiplicador alto se come antes que una `X`
    lejana).
-2. **Comida de cola propia (v7):** `Ⓐ`/`Ⓑ` de nuestra letra a 2 pasos o
-   menos.
+2. **Comida de cola propia (v7) y libre `*` (v9):** `Ⓐ`/`Ⓑ` de nuestra
+   letra o `*` a 2 pasos o menos.
 3. **Dígito correcto:** evalúa las 4 direcciones, descarta las que
    terminan en un callejón sin salida (chequeo de varios pasos) y prefiere
    rutas que el rival no pueda disputar. Con varias copias (v6) va a la más
@@ -136,6 +136,7 @@ xenon --max-absolute A --max-modules A --max-average A bot run.py
 | v6 | 30 sep 2026 | Cada dígito aparece en 3–5 copias; solo una copia da puntos. |
 | v7 | 7 oct 2026 | Partidas de 400 movimientos. Chocar ya no termina la partida: la serpiente no se mueve, conserva 3 celdas y suelta comida de cola `Ⓐ`/`Ⓑ` para el rival. Primer choque: puntaje a 0; luego −500; bajo −2500 se pierde. |
 | v8 | 14 oct 2026 | Bombas `💣` (zona 5×5) y `🧨` (zona 3×3): explotan si la cabeza termina un movimiento a distancia Chebyshev ≤ 2 (`💣`) o ≤ 1 (`🧨`). La explosión deja el puntaje en 0 (o −500 si ya era ≤ 0), pero el movimiento se hace igual. Nunca hay comida ni `X` dentro de una zona. Tras la ronda 150 desaparecen todas las bombas. Tableros de 20 a 30 por lado. |
+| v9 | 21 oct 2026 | Disparos: `{"action": "shoot", "data": {"direction": ...}}` cuesta 5000 puntos (inválido, −500, con menos de 5000), no mueve la snake y corta a la rival desde la celda impactada hasta la cola. Las celdas cortadas pasan a ser comida `*` (+100 × multiplicador, +1 de largo, la come cualquiera). **El bot todavía no dispara**, pero trata `*` como comida y no como obstáculo. |
 
 ## Protocolo
 
