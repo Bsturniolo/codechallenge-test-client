@@ -76,6 +76,18 @@ class TestSnakeBot(unittest.TestCase):
         message = self._play(turn('A', board=board))
         self.assertIn(message['data']['direction'], DIRS)
 
+    def test_planner_error_falls_back_to_random(self):
+        with patch('bot.snake_bot.Board.from_string',
+                   side_effect=ValueError('tablero raro')):
+            message = self._play(turn('A'))
+        self.assertEqual(message['action'], 'move')
+        self.assertIn(message['data']['direction'], DIRS)
+
+    def test_free_food_on_board_is_played_normally(self):
+        board = board_str(["     ", " A * ", "     "])
+        message = self._play(turn('A', board=board))
+        self.assertEqual(message['data']['direction'], 'right')
+
     def test_boxed_in_falls_back_to_random(self):
         board = board_str(["aba", "bAb", "aba"])
         message = self._play(turn('A', board=board))

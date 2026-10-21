@@ -45,8 +45,8 @@ class SnakeBot:
         return MovePlanner(board.mark_danger(keep), head, own, opp, target,
                            mine or 1, data.get('remaining_moves'))
 
-    def decide(self, data):
-        """Elige la dirección para los datos de un turno."""
+    def _plan(self, data):
+        """Dirección elegida por el planner para los datos de un turno."""
         print(data['board'])
         board = Board.from_string(data['board'])
         head = board.find(data['side'])
@@ -54,6 +54,19 @@ class SnakeBot:
             return self.random_direction()
         planner = self.build_planner(board, head, data)
         return planner.choose()[0] or self.random_direction()
+
+    def decide(self, data):
+        """Elige la dirección; ante cualquier error juega al azar.
+
+        Un fallo inesperado (por ejemplo un carácter nuevo en el tablero
+        tras una regla nueva) no debe hacer perder el turno ni cortar la
+        partida.
+        """
+        try:
+            return self._plan(data)
+        except Exception as error:
+            print('error al decidir, se juega al azar: {!r}'.format(error))
+            return self.random_direction()
 
     async def handle_turn(self, websocket, request_data):
         """Decide y envía el movimiento del turno."""
