@@ -75,7 +75,16 @@ da una jugada:
    antes (sube el multiplicador casi gratis). Si le sacamos ventaja al
    rival en la carrera al dígito, el desvío permitido crece con esa
    holgura (hasta `VIA_X_SLACK_CAP`, 6 pasos) y aun así llegamos primero.
-4. **Carrera perdida:** si el rival llega estrictamente antes a todo
+4. **Modelo de carreras (`bot/race.py`):** el tablero muestra 5 dígitos
+   consecutivos con varias copias; al comer una copia del objetivo se van
+   todas. `RaceModel` simula las próximas `RACE_HORIZON` (3) carreras con
+   distancias reales (gana quien llega primero, empate para el rival, y
+   el que pierde aprovecha para acercarse al dígito siguiente) y elige
+   entre disputar cada copia o dejar el dígito y posicionarse. En las
+   partidas grabadas acierta quién gana el dígito actual el 87 % de las
+   veces y el siguiente el 75 %. Además ninguna `X` se levanta si nos
+   hace perder un dígito que íbamos ganando.
+   **Carrera perdida (respaldo):** si el rival llega estrictamente antes a todo
    camino hacia el dígito, ir tras él es inútil (en las partidas grabadas
    se lo comía el rival ~83 % de las veces). Entonces toma una `X`/comida
    libre cercana o, si no hay, se acerca al dígito siguiente para ganar la

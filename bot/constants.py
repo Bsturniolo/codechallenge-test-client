@@ -130,3 +130,8 @@ VIA_X_MAX_DETOUR = 2
 
 # Tope del desvío extra por X cuando sobran pasos en la carrera al dígito.
 VIA_X_SLACK_CAP = 6
+
+# Modelo de carreras (bot/race.py): cuántos dígitos futuros se simulan y
+# cuánto pesan los más lejanos (los más lejanos son menos confiables).
+RACE_HORIZON = 3
+RACE_DISCOUNT = 0.8
