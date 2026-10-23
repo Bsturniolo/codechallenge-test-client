@@ -727,3 +727,38 @@ class TestSafeWalkTo(unittest.TestCase):
         planner = self.planner()
         with patch.object(MovePlanner, 'risky_head_on', return_value=True):
             self.assertIsNone(planner._safe_walk_to((1, 3)))
+
+
+class TestRaceSlack(unittest.TestCase):
+    """Los pasos de ventaja en la carrera permiten desvíos más largos."""
+
+    def grid(self):
+        grid = empty(5, 10)
+        grid[2][0] = 'A'
+        grid[2][6] = '1'
+        grid[0][3] = 'X'
+        return grid
+
+    def test_slack_without_rival_is_the_cap_plus_one(self):
+        self.assertEqual(planner_for(self.grid())._race_slack(), 7)
+
+    def test_slack_is_negative_when_the_rival_is_closer(self):
+        grid = self.grid()
+        grid[2][8] = 'B'
+        self.assertLess(planner_for(grid)._race_slack(), 0)
+
+    def test_slack_zero_without_a_reachable_digit(self):
+        grid = self.grid()
+        grid[2][6] = ' '
+        self.assertEqual(planner_for(grid)._race_slack(), 0)
+
+    def test_big_slack_allows_a_four_step_detour(self):
+        planner = planner_for(self.grid())
+        self.assertEqual(planner._x_detour_limit(), 6)
+        self.assertEqual(planner._via_multiplier()[1], (0, 3))
+
+    def test_no_slack_keeps_the_short_detour_limit(self):
+        planner = planner_for(self.grid())
+        with patch.object(MovePlanner, '_race_slack', return_value=2):
+            self.assertEqual(planner._x_detour_limit(), 2)
+            self.assertIsNone(planner._via_multiplier())

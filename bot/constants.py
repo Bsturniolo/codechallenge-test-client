@@ -127,3 +127,6 @@ WRONG_STEP_COST = 500
 
 # Desvío máximo (pasos de más) para levantar una X yendo hacia el dígito.
 VIA_X_MAX_DETOUR = 2
+
+# Tope del desvío extra por X cuando sobran pasos en la carrera al dígito.
+VIA_X_SLACK_CAP = 6
