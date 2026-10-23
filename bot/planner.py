@@ -8,8 +8,8 @@ from bot.constants import (
     MIN_REMAINING_MOVES_FOR_ACCUMULATION,
     MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_BUDGET_FACTOR,
     MULTIPLIER_CHAR, MULTIPLIER_PICKUP_POINTS, PATH_SAFETY_DEPTH,
-    TAIL_FOOD, TAIL_FOOD_DETOUR_MAX, TERRITORY_TOLERANCE, VIA_X_MAX_DETOUR,
-    VIA_X_SLACK_CAP, WALL_CHAR,
+    TAIL_FOOD, TAIL_FOOD_DETOUR_MAX, TERRITORY_TOLERANCE,
+    TRAP_LENGTH_ADVANTAGE, VIA_X_MAX_DETOUR, VIA_X_SLACK_CAP, WALL_CHAR,
     WRONG_STEP_COST,
 )
 from bot.race import RaceModel
@@ -509,6 +509,31 @@ class MovePlanner:
         best = min(near)
         return best[0], (best[1], None)
 
+    def _rival_territory(self, cell):
+        """Territorio del rival si nos paramos en ``cell``."""
+        return self.board.territory(
+            self.opp_head, cell, self.lookahead_blocked)
+
+    def _trap_rival(self):
+        """Arrinconar al rival con el cuerpo cuando le ganamos en largo.
+
+        En vez de buscar territorio neutral, entre los pasos seguros (con
+        espacio para nuestro largo) elige el que más le achica el área al
+        rival: lo empuja hacia una esquina para que choque contra nosotros
+        o contra la pared.
+        """
+        if not self.opp_head:
+            return None
+        if self.own_length - self.opp_length < TRAP_LENGTH_ADVANTAGE:
+            return None
+        steps = self._scored_steps()
+        if not steps:
+            return None
+        options = [
+            (self._rival_territory(cell), -score, name)
+            for name, (cell, score) in steps.items()]
+        return min(options)[2], None
+
     def _territory_move(self):
         """Paso por territorio cuando no hay comida alcanzable.
 
@@ -565,7 +590,8 @@ class MovePlanner:
         """
         steps = (self._accumulate, self._grab_tail, self._via_multiplier,
                  self._race_move, self._when_losing_race, self._pursue_digit,
-                 self._opportunistic_bonus, self._territory_move)
+                 self._opportunistic_bonus, self._trap_rival,
+                 self._territory_move)
         for step in steps:
             result = step()
             if result:
