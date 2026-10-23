@@ -70,14 +70,22 @@ da una jugada:
    lejana).
 2. **Comida de cola propia (v7) y libre `*` (v9):** `Ⓐ`/`Ⓑ` de nuestra
    letra o `*` a 2 pasos o menos.
-3. **Dígito correcto:** evalúa las 4 direcciones, descarta las que
+3. **`X` de camino al dígito:** si una `X` agrega como mucho
+   `VIA_X_MAX_DETOUR` (2) pasos al recorrido hacia el dígito, la levanta
+   antes (sube el multiplicador casi gratis).
+4. **Carrera perdida:** si el rival llega estrictamente antes a todo
+   camino hacia el dígito, ir tras él es inútil (en las partidas grabadas
+   se lo comía el rival ~83 % de las veces). Entonces toma una `X`/comida
+   libre cercana o, si no hay, se acerca al dígito siguiente para ganar la
+   próxima carrera.
+5. **Dígito correcto:** evalúa las 4 direcciones, descarta las que
    terminan en un callejón sin salida (chequeo de varios pasos) y prefiere
    rutas que el rival no pueda disputar. Con varias copias (v6) va a la más
    cercana.
-4. **`X` o comida de cola** si el dígito no es alcanzable con seguridad.
-5. **Territorio:** entre los pasos que controlan casi tantas celdas como el
+6. **`X` o comida de cola** si el dígito no es alcanzable con seguridad.
+7. **Territorio:** entre los pasos que controlan casi tantas celdas como el
    mejor (`TERRITORY_TOLERANCE`), el que queda más cerca del dígito objetivo.
-6. **Último recurso:** el paso menos costoso (celda libre, dígito
+8. **Último recurso:** el paso menos costoso (celda libre, dígito
    incorrecto, zona de bomba, cabeza rival, pared, cuerpo) y, a igual
    costo, el que deja más espacio libre.
 

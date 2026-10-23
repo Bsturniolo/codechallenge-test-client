@@ -8,7 +8,8 @@ from bot.constants import (
     MIN_REMAINING_MOVES_FOR_ACCUMULATION,
     MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_BUDGET_FACTOR,
     MULTIPLIER_CHAR, MULTIPLIER_PICKUP_POINTS, PATH_SAFETY_DEPTH,
-    TAIL_FOOD, TAIL_FOOD_DETOUR_MAX, TERRITORY_TOLERANCE, WALL_CHAR,
+    TAIL_FOOD, TAIL_FOOD_DETOUR_MAX, TERRITORY_TOLERANCE, VIA_X_MAX_DETOUR,
+    WALL_CHAR,
     WRONG_STEP_COST,
 )
 
@@ -225,6 +226,49 @@ class MovePlanner:
         return max(1, own_left * MULTIPLIER_BUDGET_FACTOR
                    // self.own_multiplier)
 
+    def _digit_distance(self, source):
+        """Pasos desde ``source`` a la copia más cercana del dígito."""
+        reach = self.board.distances(source, self.blocked)
+        found = [reach[pos] for pos in self.board.positions(self.target_char)
+                 if pos in reach]
+        return min(found) if found else None
+
+    def _x_detour(self, x_cell, from_head, direct):
+        """Pasos de más de ir al dígito pasando por ``x_cell`` (o ``None``)."""
+        to_x = from_head.get(x_cell)
+        after = self._digit_distance(x_cell) if to_x and direct else None
+        return None if after is None else to_x + after - direct
+
+    def _x_on_the_way(self):
+        """Celda de la ``X`` con menor desvío hacia el dígito, o ``None``."""
+        direct = self._digit_distance(self.head)
+        from_head = self.board.distances(self.head, self.blocked)
+        options = []
+        for cell in self.board.positions(MULTIPLIER_CHAR):
+            detour = self._x_detour(cell, from_head, direct)
+            if detour is not None and detour <= VIA_X_MAX_DETOUR:
+                options.append((detour, cell))
+        return min(options)[1] if options else None
+
+    def _safe_walk_to(self, cell):
+        """Camino a ``cell`` si es seguro, sin riesgo de frente y libre."""
+        path = self.board.path_to_cell(self.head, self.blocked, cell)
+        if not path or not self.is_safe_path(path):
+            return None
+        if self.risky_head_on(self._step_cell(path[0])):
+            return None
+        return path if self._uncontested(path) else None
+
+    def _via_multiplier(self):
+        """Levantar una ``X`` que queda casi de camino al dígito.
+
+        Si el desvío es de unos pocos pasos, la ``X`` sale casi gratis y
+        sube el multiplicador de todas las comidas siguientes.
+        """
+        cell = self._x_on_the_way() if self._accumulating() else None
+        path = self._safe_walk_to(cell) if cell else None
+        return (path[0], cell) if path else None
+
     def _first_reachable(self, chars, max_len=None):
         """Primer ``try_reach_char`` exitoso entre ``chars``."""
         for char in chars:
@@ -290,16 +334,47 @@ class MovePlanner:
         """Dígito que toca después del objetivo (el 9 vuelve al 1)."""
         return str(int(self.target_char) % 9 + 1)
 
-    def _follow_up_distance(self, cell):
+    def _next_distance(self, cell):
         """Pasos desde ``cell`` a la copia más cercana del dígito siguiente.
 
-        Es 0 si no hay ninguna alcanzable: no cambia la elección.
+        Es ``inf`` si no hay ninguna alcanzable.
         """
         following = self._next_digit_char()
         reach = self.board.distances(cell, self.blocked - {following})
         found = [reach[pos] for pos in self.board.positions(following)
                  if pos in reach]
-        return min(found) if found else 0
+        return min(found) if found else float('inf')
+
+    def _follow_up_distance(self, cell):
+        """Como ``_next_distance`` pero 0 si no hay: no cambia la elección."""
+        distance = self._next_distance(cell)
+        return 0 if distance == float('inf') else distance
+
+    def _rival_ahead(self, entry):
+        """True si el rival llega antes (estricto) al destino."""
+        length, _, end = entry
+        opp_dist = self.opp_distance_to(end)
+        return opp_dist is not None and opp_dist < length
+
+    def _losing_race(self):
+        """True si el dígito solo se alcanza perdiendo la carrera."""
+        free, contested = self._split_candidates()
+        if free or not contested:
+            return False
+        return all(self._rival_ahead(entry) for entry in contested)
+
+    def _stage_next(self):
+        """Acercarse al dígito siguiente, que será el objetivo cuando el
+        rival se coma el actual: así llegamos a él antes que el rival.
+        """
+        best = self._best_step(self._next_distance)
+        return None if best is None or best[0] == float('inf') else best[1]
+
+    def _when_losing_race(self):
+        """Si el dígito está perdido: bonus cercano o posicionarse."""
+        if not self._losing_race():
+            return None
+        return self._opportunistic_bonus() or self._stage_next()
 
     def _pursue_cost(self, entry):
         """Costo de una ruta: pasos más la distancia al dígito siguiente."""
@@ -338,19 +413,29 @@ class MovePlanner:
                  if self.step_area(step[0]) > self.own_length}
         return roomy or steps
 
+    def _best_step(self, distance):
+        """``(distancia, (direccion, None))`` del paso que más acerca.
+
+        Solo entre los pasos cuyo territorio es casi el mejor; ``distance``
+        mide desde la celda del paso a lo que se quiere alcanzar.
+        """
+        steps = self._scored_steps()
+        if not steps:
+            return None
+        limit = TERRITORY_TOLERANCE * max(s for _, s in steps.values())
+        near = [(distance(cell), name)
+                for name, (cell, score) in steps.items() if score >= limit]
+        best = min(near)
+        return best[0], (best[1], None)
+
     def _territory_move(self):
         """Paso por territorio cuando no hay comida alcanzable.
 
         Entre los pasos cuyo territorio es casi el mejor, prefiere el que
         acerca al dígito objetivo en vez de dar vueltas sin rumbo.
         """
-        steps = self._scored_steps()
-        if not steps:
-            return None
-        limit = TERRITORY_TOLERANCE * max(s for _, s in steps.values())
-        near = [(self._target_distance(cell), name)
-                for name, (cell, score) in steps.items() if score >= limit]
-        return min(near)[1], None
+        best = self._best_step(self._target_distance)
+        return best[1] if best else None
 
     def _resort_cost(self, char):
         """Puntos que cuesta pisar ``char`` (menor es mejor).
@@ -397,7 +482,8 @@ class MovePlanner:
 
         La dirección es ``None`` si no existe ningún movimiento posible.
         """
-        steps = (self._accumulate, self._grab_tail, self._pursue_digit,
+        steps = (self._accumulate, self._grab_tail, self._via_multiplier,
+                 self._when_losing_race, self._pursue_digit,
                  self._opportunistic_bonus, self._territory_move)
         for step in steps:
             result = step()
