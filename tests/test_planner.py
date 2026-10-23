@@ -6,7 +6,7 @@ from unittest.mock import patch
 from bot.board import Board
 from bot.constants import (
     DANGER_CHAR, DIRS, FREE_FOOD_CHAR, MULTIPLIER_ACCUMULATION_CAP,
-    MULTIPLIER_BUDGET_FACTOR)
+    MULTIPLIER_BUDGET_FACTOR, TRAP_LENGTH_ADVANTAGE)
 from bot.planner import MovePlanner, Side, manhattan, opposite
 from tests.helpers import choose, empty, planner_for
 
@@ -852,3 +852,50 @@ class TestXLosesRace(unittest.TestCase):
         planner = planner_for(self.grid((0, 1)))
         with patch.object(MovePlanner, '_x_loses_race', return_value=True):
             self.assertIsNone(planner._via_multiplier())
+
+
+class TestTrapRival(unittest.TestCase):
+    """Arrinconar al rival con el cuerpo cuando le ganamos en largo."""
+
+    def grid(self, a_body=0):
+        grid = empty(5, 10)
+        grid[2][4] = 'A'
+        for i in range(a_body):
+            grid[2][5 + i] = 'a'
+        grid[2][0] = 'B'
+        return grid
+
+    def test_no_trap_without_a_rival(self):
+        grid = empty(3, 5)
+        grid[1][2] = 'A'
+        self.assertIsNone(planner_for(grid)._trap_rival())
+
+    def test_no_trap_without_a_clear_length_advantage(self):
+        self.assertIsNone(planner_for(self.grid())._trap_rival())
+
+    def test_traps_when_far_ahead_in_length(self):
+        planner = planner_for(self.grid(a_body=TRAP_LENGTH_ADVANTAGE))
+        self.assertGreaterEqual(
+            planner.own_length - planner.opp_length, TRAP_LENGTH_ADVANTAGE)
+        found = planner._trap_rival()
+        self.assertIsNotNone(found)
+        self.assertIsNone(found[1])
+
+    def test_picks_the_step_that_shrinks_the_rival_the_most(self):
+        planner = planner_for(self.grid(a_body=TRAP_LENGTH_ADVANTAGE))
+        with patch.object(
+                MovePlanner, '_rival_territory',
+                side_effect=lambda cell: 0 if cell == (1, 4) else 10):
+            direction, _ = planner._trap_rival()
+        self.assertEqual(direction, 'up')
+
+    def test_nothing_without_a_safe_step(self):
+        planner = planner_for(self.grid(a_body=TRAP_LENGTH_ADVANTAGE))
+        with patch.object(MovePlanner, '_scored_steps', return_value={}):
+            self.assertIsNone(planner._trap_rival())
+
+    def test_choose_falls_back_to_trapping(self):
+        planner = planner_for(self.grid(a_body=TRAP_LENGTH_ADVANTAGE))
+        direction, target = planner.choose()
+        self.assertIsNone(target)
+        self.assertIn(direction, DIRS)

@@ -139,3 +139,7 @@ RACE_DISCOUNT = 0.8
 # Solo se deja un dígito (para posicionarse) si el rival llega con al menos
 # estos pasos de ventaja; con una carrera pareja se la disputa.
 RACE_SKIP_MARGIN = 3
+
+# Ventaja de largo mínima sobre el rival para arrinconarlo con el cuerpo
+# en vez de solo buscar territorio neutral.
+TRAP_LENGTH_ADVANTAGE = 5

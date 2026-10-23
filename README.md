@@ -96,7 +96,12 @@ da una jugada:
    rutas que el rival no pueda disputar. Con varias copias (v6) va a la más
    cercana.
 6. **`X` o comida de cola** si el dígito no es alcanzable con seguridad.
-7. **Territorio:** entre los pasos que controlan casi tantas celdas como el
+7. **Arrinconar al rival:** si le ganamos en largo por
+   `TRAP_LENGTH_ADVANTAGE` (5) o más, en vez de territorio neutral se
+   elige el paso que más le achica el área alcanzable al rival (lo
+   empuja hacia una pared o nuestro cuerpo para que choque). En las
+   partidas grabadas se habría activado en el 4 % de los turnos.
+8. **Territorio:** entre los pasos que controlan casi tantas celdas como el
    mejor (`TERRITORY_TOLERANCE`), el que queda más cerca del dígito objetivo.
 8. **Último recurso:** el paso menos costoso (celda libre, dígito
    incorrecto, zona de bomba, cabeza rival, pared, cuerpo) y, a igual
