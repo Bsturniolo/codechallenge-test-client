@@ -72,7 +72,9 @@ da una jugada:
    letra o `*` a 2 pasos o menos.
 3. **`X` de camino al dígito:** si una `X` agrega como mucho
    `VIA_X_MAX_DETOUR` (2) pasos al recorrido hacia el dígito, la levanta
-   antes (sube el multiplicador casi gratis).
+   antes (sube el multiplicador casi gratis). Si le sacamos ventaja al
+   rival en la carrera al dígito, el desvío permitido crece con esa
+   holgura (hasta `VIA_X_SLACK_CAP`, 6 pasos) y aun así llegamos primero.
 4. **Carrera perdida:** si el rival llega estrictamente antes a todo
    camino hacia el dígito, ir tras él es inútil (en las partidas grabadas
    se lo comía el rival ~83 % de las veces). Entonces toma una `X`/comida

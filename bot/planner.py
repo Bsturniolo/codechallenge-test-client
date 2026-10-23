@@ -9,7 +9,7 @@ from bot.constants import (
     MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_BUDGET_FACTOR,
     MULTIPLIER_CHAR, MULTIPLIER_PICKUP_POINTS, PATH_SAFETY_DEPTH,
     TAIL_FOOD, TAIL_FOOD_DETOUR_MAX, TERRITORY_TOLERANCE, VIA_X_MAX_DETOUR,
-    WALL_CHAR,
+    VIA_X_SLACK_CAP, WALL_CHAR,
     WRONG_STEP_COST,
 )
 
@@ -239,14 +239,36 @@ class MovePlanner:
         after = self._digit_distance(x_cell) if to_x and direct else None
         return None if after is None else to_x + after - direct
 
+    def _race_slack(self):
+        """Pasos de ventaja sobre el rival en la carrera al dígito.
+
+        Es el mayor margen entre las copias alcanzables (negativo si el
+        rival llega antes); sin rival sobran ``VIA_X_SLACK_CAP + 1``.
+        """
+        ours = self.board.distances(self.head, self.blocked)
+        margins = []
+        for cell in self.board.positions(self.target_char):
+            theirs = self.opp_distance_to(cell)
+            if cell in ours:
+                margins.append(
+                    VIA_X_SLACK_CAP + 1 if theirs is None
+                    else theirs - ours[cell])
+        return max(margins) if margins else 0
+
+    def _x_detour_limit(self):
+        """Desvío máximo por una X: la holgura de la carrera la amplía."""
+        slack = min(self._race_slack() - 1, VIA_X_SLACK_CAP)
+        return max(VIA_X_MAX_DETOUR, slack)
+
     def _x_on_the_way(self):
         """Celda de la ``X`` con menor desvío hacia el dígito, o ``None``."""
         direct = self._digit_distance(self.head)
         from_head = self.board.distances(self.head, self.blocked)
         options = []
+        limit = self._x_detour_limit()
         for cell in self.board.positions(MULTIPLIER_CHAR):
             detour = self._x_detour(cell, from_head, direct)
-            if detour is not None and detour <= VIA_X_MAX_DETOUR:
+            if detour is not None and detour <= limit:
                 options.append((detour, cell))
         return min(options)[1] if options else None
 
@@ -262,8 +284,9 @@ class MovePlanner:
     def _via_multiplier(self):
         """Levantar una ``X`` que queda casi de camino al dígito.
 
-        Si el desvío es de unos pocos pasos, la ``X`` sale casi gratis y
-        sube el multiplicador de todas las comidas siguientes.
+        Si el desvío es de unos pocos pasos (o cabe en la ventaja que
+        tenemos sobre el rival), la ``X`` sale casi gratis y sube el
+        multiplicador de todas las comidas siguientes.
         """
         cell = self._x_on_the_way() if self._accumulating() else None
         path = self._safe_walk_to(cell) if cell else None
