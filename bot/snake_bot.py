@@ -26,6 +26,12 @@ class SnakeBot:
         return data.get(mine), data.get(theirs)
 
     @staticmethod
+    def own_score(data):
+        """Puntaje propio según nuestro lado (0 si no viene)."""
+        key = 'score_1' if data['side'] == 'A' else 'score_2'
+        return data.get(key) or 0
+
+    @staticmethod
     def random_direction():
         """Dirección al azar, solo si no hay ninguna decisión posible."""
         return choice(list(DIRS))
@@ -45,7 +51,8 @@ class SnakeBot:
         target = board.target_digit() or STARTING_DIGIT
         keep = {own.head, own.body, opp.head, opp.body, WALL_CHAR}
         return MovePlanner(board.mark_danger(keep), head, own, opp, target,
-                           mine or 1, data.get('remaining_moves'))
+                           mine or 1, data.get('remaining_moves'),
+                           self.own_score(data))
 
     def _plan(self, data):
         """Dirección elegida por el planner para los datos de un turno."""
@@ -86,6 +93,7 @@ class SnakeBot:
             'rival_score': self._number(data, theirs),
             'own_moves_left': self._number(data, 'remaining_moves') // 2,
             'multiplier': self.multipliers(data)[0] or 1,
+            'rival_multiplier': self.multipliers(data)[1] or 1,
         }
 
     def shot_direction(self, data):

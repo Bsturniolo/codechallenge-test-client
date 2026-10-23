@@ -1,10 +1,13 @@
 """Disparos (v9): cuándo vale la pena gastar 5000 puntos en cortar al rival."""
 
+from bot.board import Board
 from bot.constants import (
-    DIRS, MAX_SHOTS_PER_GAME, MAX_SHOTS_WHEN_BEHIND, SHOOTING_ENABLED,
-    SHOT_BEHIND_GAP, SHOT_COST, SHOT_LEAD_LIMIT, SHOT_MIN_OWN_MOVES_LEFT,
-    SHOT_MIN_RETURN, SHOT_MIN_RETURN_WHEN_BEHIND, SHOT_MIN_SCORE_LEFT,
-    SHOT_RECOVERY_SHARE, WALL_CHAR)
+    DIRS, FREE_FOOD_CHAR, MAX_SHOTS_PER_GAME, MAX_SHOTS_WHEN_BEHIND,
+    SHOOTING_ENABLED, SHOT_BEHIND_GAP, SHOT_COST, SHOT_LEAD_LIMIT,
+    SHOT_MIN_OWN_MOVES_LEFT, SHOT_MIN_RETURN, SHOT_MIN_RETURN_WHEN_BEHIND,
+    SHOT_MIN_SCORE_LEFT, WALL_CHAR)
+
+NEVER = float('inf')
 
 
 def ray_hit(board, head, name, opp):
@@ -52,13 +55,44 @@ def snake_chain(board, opp):
     return _extend(board, [head], cells)
 
 
-def cut_cells(board, opp, hit):
-    """Cuántas celdas del rival se cortan si el disparo pega en ``hit``."""
+def cut_list(board, opp, hit):
+    """Celdas del rival que se cortan si el disparo pega en ``hit``."""
     chain = snake_chain(board, opp)
     if chain is None or hit not in chain:
-        return 0
+        return []
     index = chain.index(hit)
-    return len(chain) - 1 if index == 0 else len(chain) - index
+    return chain[1:] if index == 0 else chain[index:]
+
+
+def cut_cells(board, opp, hit):
+    """Cuántas celdas del rival se cortan si el disparo pega en ``hit``."""
+    return len(cut_list(board, opp, hit))
+
+
+def _with_food(board, cells):
+    """Copia del tablero con las celdas cortadas convertidas en comida."""
+    after = Board([list(row) for row in board.grid])
+    for row, col in cells:
+        after.grid[row][col] = FREE_FOOD_CHAR
+    return after
+
+
+def race_counts(board, head, opp, cells):
+    """``(nuestras, del rival)``: celdas cortadas que comería cada uno.
+
+    Las celdas cortadas pasan a ser comida. El rival mueve primero después
+    del disparo, así que nosotros solo ganamos las celdas a las que
+    llegamos en menos pasos que él; con empate se las lleva el rival.
+    """
+    own_head = board.char_at(head)
+    after = _with_food(board, cells)
+    ours = after.distances(
+        head, {own_head.lower(), opp.body, opp.head, WALL_CHAR})
+    theirs = after.distances(
+        board.find(opp.head),
+        {own_head.lower(), own_head, opp.body, WALL_CHAR})
+    mine = {c for c in cells if ours.get(c, NEVER) < theirs.get(c, NEVER)}
+    return len(mine), len(set(cells) & set(theirs) - mine)
 
 
 class Shooter:
@@ -96,39 +130,45 @@ class Shooter:
         return all(checks)
 
     @staticmethod
-    def worth_it(cells, multiplier, min_return=SHOT_MIN_RETURN):
-        """True si lo que se espera recuperar paga el disparo."""
-        gain = cells * 100 * multiplier * SHOT_RECOVERY_SHARE
-        return gain >= SHOT_COST * min_return
+    def swing(ours, rivals, multipliers):
+        """Puntos que ganamos de más que el rival con las celdas cortadas."""
+        mine, theirs = multipliers
+        return 100 * (ours * mine - rivals * theirs)
 
     @staticmethod
-    def _shot_options(board, head, opp):
-        """``(celdas cortadas, es a la cabeza, dirección)`` de cada tiro."""
+    def worth_it(swing, min_return=SHOT_MIN_RETURN):
+        """True si la ventaja esperada paga el disparo (con margen)."""
+        return swing >= SHOT_COST * min_return
+
+    def _shot_options(self, board, head, opp, multipliers):
+        """``(ventaja, es a la cabeza, dirección)`` de cada tiro posible."""
         options = []
         rival_head = board.find(opp.head)
         for name in DIRS:
             hit = ray_hit(board, head, name, opp)
             if hit:
-                cells = cut_cells(board, opp, hit)
-                options.append((cells, hit == rival_head, name))
+                cells = cut_list(board, opp, hit)
+                ours, rivals = race_counts(board, head, opp, cells)
+                value = self.swing(ours, rivals, multipliers)
+                options.append((value, hit == rival_head, name))
         return options
 
-    def best_direction(self, board, head, opp, multiplier, min_return):
-        """Mejor tiro (cabeza primero, luego más celdas) o ``None``."""
-        options = self._shot_options(board, head, opp)
-        for cells, _, name in sorted(options, reverse=True):
-            if self.worth_it(cells, multiplier, min_return):
-                return name
-        return None
+    def best_direction(self, board, head, opp, multipliers, min_return):
+        """Mejor tiro (más ventaja, cabeza si empatan) o ``None``."""
+        options = self._shot_options(board, head, opp, multipliers)
+        if not options:
+            return None
+        value, _, name = max(options)
+        return name if self.worth_it(value, min_return) else None
 
     def decide(self, board, head, opp, state):
         """Dirección de disparo o ``None``.
 
         ``state`` trae ``game_id``, ``score``, ``rival_score``,
-        ``own_moves_left`` y ``multiplier``.
+        ``own_moves_left``, ``multiplier`` y ``rival_multiplier``.
         """
         max_shots, min_return = self.limits(state)
         if not self._allowed(state, max_shots):
             return None
-        return self.best_direction(
-            board, head, opp, state['multiplier'], min_return)
+        multipliers = (state['multiplier'], state['rival_multiplier'])
+        return self.best_direction(board, head, opp, multipliers, min_return)

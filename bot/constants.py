@@ -103,10 +103,6 @@ MAX_SHOTS_PER_GAME = 1
 # Puntaje mínimo que tiene que quedar después de pagar el disparo.
 SHOT_MIN_SCORE_LEFT = 5000
 
-# Qué parte de las celdas cortadas se espera comer nosotros (las puede
-# comer cualquiera de las dos serpientes).
-SHOT_RECOVERY_SHARE = 0.5
-
 # Con menos movimientos propios que estos ya no da tiempo a comer la comida.
 SHOT_MIN_OWN_MOVES_LEFT = 40
 
@@ -124,3 +120,7 @@ SHOT_MIN_RETURN_WHEN_BEHIND = 1.0
 SHOT_LEAD_LIMIT = 20000
 
 # Comida libre que dejan las celdas cortadas (v9).
+
+# Lo que cuesta pisar una pared '#' o un dígito incorrecto (el movimiento
+# de pared no se hace, el de dígito sí). Sirve para comparar con un choque.
+WRONG_STEP_COST = 500

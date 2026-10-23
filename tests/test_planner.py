@@ -331,9 +331,22 @@ class TestV5Wall(unittest.TestCase):
             grid[row][5] = '#'
         self.assertEqual(choose(grid), ('right', (1, 4)))
 
-    def test_last_resort_prefers_non_wall(self):
+    def test_last_resort_prefers_wall_over_crashing_into_the_rival(self):
         grid = [['#', 'b', ' '], ['A', 'B', ' '], ['b', ' ', ' ']]
-        self.assertEqual(choose(grid)[0], 'right')
+        self.assertEqual(choose(grid)[0], 'up')
+        self.assertEqual(choose(grid, own_score=44245)[0], 'up')
+
+    def test_last_resort_costs_follow_the_score(self):
+        grid = [list('b#a'), list('bAB'), list('bba')]
+        planner = planner_for(grid, own_score=44245)
+        self.assertEqual(planner._resort_cost('B'), 44245 + 500)
+        self.assertEqual(planner._resort_cost('b'), 44245 + 501)
+        self.assertEqual(planner._resort_cost(DANGER_CHAR), 44245)
+        self.assertEqual(planner._resort_cost('#'), 500)
+        self.assertEqual(planner._resort_cost('5'), 500)
+        self.assertEqual(planner._resort_cost(' '), 0)
+        low = planner_for(grid, own_score=0)
+        self.assertEqual(low._resort_cost(DANGER_CHAR), 500)
 
     def test_last_resort_uses_wall_if_nothing_else(self):
         grid = [list('b#a'), list('bAa'), list('baa')]
@@ -470,12 +483,19 @@ class TestV8Bombs(unittest.TestCase):
         grid = [list('bbb'), list('aAD'), list('bbb')]
         grid[1][2] = DANGER_CHAR
         grid[0][1] = '5'
-        self.assertEqual(choose(grid)[0], 'up')
+        self.assertEqual(choose(grid, own_score=10000)[0], 'up')
 
-    def test_last_resort_prefers_explosion_over_wall(self):
+    def test_last_resort_prefers_wall_over_explosion_with_a_high_score(self):
         grid = [list('b#b'), list('aAD'), list('bbb')]
         grid[1][2] = DANGER_CHAR
-        self.assertEqual(choose(grid)[0], 'right')
+        self.assertEqual(choose(grid, own_score=10000)[0], 'up')
+
+    def test_explosion_costs_the_same_as_a_wall_at_zero_score(self):
+        grid = [list('b#b'), list('aAD'), list('bbb')]
+        grid[1][2] = DANGER_CHAR
+        planner = planner_for(grid, own_score=0)
+        self.assertEqual(planner._resort_cost(DANGER_CHAR),
+                         planner._resort_cost('#'))
 
     def test_rival_path_estimate_ignores_danger(self):
         # El rival igual puede cruzar la zona: la carrera sigue disputada.
@@ -552,3 +572,31 @@ class TestV9FreeFood(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestRoomBeforeRival(unittest.TestCase):
+    """No entrar a lugares que el rival puede cerrar antes que nosotros."""
+
+    def grid(self):
+        grid = empty(3, 8)
+        grid[1][0] = 'A'
+        grid[1][1] = 'a'
+        grid[1][2] = 'a'
+        grid[1][7] = 'B'
+        return grid
+
+    def test_true_without_rival_head_or_path(self):
+        grid = empty(3, 3)
+        grid[1][1] = 'A'
+        planner = planner_for(grid)
+        self.assertTrue(planner._room_before_rival(['up']))
+        self.assertTrue(planner._room_before_rival([]))
+
+    def test_open_board_gives_enough_room(self):
+        self.assertTrue(planner_for(self.grid())._room_before_rival(['up']))
+
+    def test_rejects_a_step_into_a_pocket_the_rival_can_seal(self):
+        planner = planner_for(self.grid())
+        with patch.object(MovePlanner, 'step_territory', return_value=1):
+            self.assertFalse(planner._room_before_rival(['up']))
+            self.assertFalse(planner.is_safe_path(['up']))

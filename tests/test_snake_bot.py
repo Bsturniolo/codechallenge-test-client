@@ -76,6 +76,12 @@ class TestSnakeBot(unittest.TestCase):
         message = self._play(turn('A', board=board))
         self.assertIn(message['data']['direction'], DIRS)
 
+    def test_own_score_by_side(self):
+        data = turn('B', score_1=10, score_2=20)['data']
+        self.assertEqual(SnakeBot.own_score(data), 20)
+        self.assertEqual(SnakeBot.own_score(turn('A', score_1=7)['data']), 7)
+        self.assertEqual(SnakeBot.own_score(turn('A')['data']), 0)
+
     def test_planner_error_falls_back_to_random(self):
         with patch('bot.snake_bot.Board.from_string',
                    side_effect=ValueError('tablero raro')):
