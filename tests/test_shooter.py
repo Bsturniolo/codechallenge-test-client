@@ -9,7 +9,8 @@ from bot.board import Board
 from bot.constants import SHOT_COST
 from bot.logger import GameLogger
 from bot.planner import Side
-from bot.shooter import Shooter, cut_cells, ray_hit, snake_chain
+from bot.shooter import (
+    Shooter, cut_cells, cut_list, race_counts, ray_hit, snake_chain)
 from bot.snake_bot import SnakeBot
 from tests.helpers import board_str, quiet, turn
 
@@ -19,12 +20,13 @@ OPP = Side.from_letter('B')
 def rows_with_rival():
     """12x14: nosotros arriba (0, 8); rival horizontal en la fila 5.
 
-    El rival tiene la cabeza en (5, 12) y el cuerpo hasta (5, 3): 10
-    celdas. Un disparo hacia abajo desde (0, 8) pega en (5, 8).
+    El rival tiene la cabeza en (5, 2) y el cuerpo hasta (5, 11): 10
+    celdas. Un disparo hacia abajo desde (0, 8) pega en (5, 8) y corta 4
+    celdas que están más cerca nuestro que de su cabeza.
     """
     rows = [' ' * 14 for _ in range(12)]
     rows[0] = ' ' * 8 + 'A' + ' ' * 5
-    rows[5] = '   ' + 'b' * 9 + 'B' + ' '
+    rows[5] = '  B' + 'b' * 9 + '   '
     return rows
 
 
@@ -63,8 +65,8 @@ class TestCut(unittest.TestCase):
 
     def test_chain_goes_from_head_to_tail(self):
         chain = snake_chain(board(), OPP)
-        self.assertEqual(chain[0], (5, 12))
-        self.assertEqual(chain[-1], (5, 3))
+        self.assertEqual(chain[0], (5, 2))
+        self.assertEqual(chain[-1], (5, 11))
         self.assertEqual(len(chain), 10)
 
     def test_chain_none_without_rival_head(self):
@@ -80,10 +82,20 @@ class TestCut(unittest.TestCase):
         self.assertIsNone(snake_chain(odd, OPP))
 
     def test_cut_from_middle_to_tail(self):
-        self.assertEqual(cut_cells(board(), OPP, (5, 8)), 6)
+        self.assertEqual(cut_cells(board(), OPP, (5, 8)), 4)
 
     def test_cut_at_head_leaves_only_the_head(self):
-        self.assertEqual(cut_cells(board(), OPP, (5, 12)), 9)
+        self.assertEqual(cut_cells(board(), OPP, (5, 2)), 9)
+
+    def test_race_counts_who_reaches_the_food_first(self):
+        cells = cut_list(board(), OPP, (5, 8))
+        self.assertEqual(race_counts(board(), (0, 8), OPP, cells), (4, 0))
+        head_cells = cut_list(board(), OPP, (5, 2))
+        self.assertEqual(race_counts(board(), (0, 8), OPP, head_cells), (4, 5))
+
+    def test_swing_is_what_we_win_over_the_rival(self):
+        self.assertEqual(Shooter.swing(4, 5, (30, 1)), 100 * (120 - 5))
+        self.assertEqual(Shooter.swing(0, 3, (30, 2)), -600)
 
     def test_cut_zero_for_unknown_cell(self):
         self.assertEqual(cut_cells(board(), OPP, (0, 0)), 0)
@@ -91,7 +103,7 @@ class TestCut(unittest.TestCase):
 
 def state(**extra):
     base = {'game_id': 'g', 'score': 30000, 'rival_score': 30000,
-            'own_moves_left': 100, 'multiplier': 30}
+            'own_moves_left': 100, 'multiplier': 30, 'rival_multiplier': 1}
     base.update(extra)
     return base
 
@@ -109,9 +121,10 @@ class TestShooter(unittest.TestCase):
         self.assertEqual(self.decide(), 'down')
 
     def test_worth_it_math(self):
-        self.assertTrue(Shooter.worth_it(6, 30))
-        self.assertFalse(Shooter.worth_it(6, 20))
-        self.assertFalse(Shooter.worth_it(10, 10))
+        self.assertTrue(Shooter.worth_it(7500))
+        self.assertFalse(Shooter.worth_it(7499))
+        self.assertTrue(Shooter.worth_it(5000, 1.0))
+        self.assertFalse(Shooter.worth_it(-100))
 
     def test_not_worth_with_low_multiplier(self):
         self.assertIsNone(self.decide(multiplier=5))
@@ -156,26 +169,29 @@ def rows_with_two_lines_of_fire():
 class TestAim(unittest.TestCase):
     """Elegir el tiro: a la cabeza o donde más daño haga."""
 
-    def test_prefers_the_head_shot_over_a_body_shot(self):
+    def test_picks_the_shot_with_the_biggest_swing(self):
         wide = Board.from_string(board_str(rows_with_two_lines_of_fire()))
         shooter = Shooter()
-        options = sorted(shooter._shot_options(wide, (4, 6), OPP))
-        self.assertEqual([name for *_, name in options], ['left', 'up'])
-        self.assertEqual(options[-1][:2], (10, True))
+        options = sorted(shooter._shot_options(wide, (4, 6), OPP, (30, 1)))
+        self.assertEqual([name for *_, name in options], ['up', 'left'])
+        self.assertEqual(options[0][:2], (8300, True))
         self.assertEqual(
-            shooter.best_direction(wide, (4, 6), OPP, 30, 1.5), 'up')
+            shooter.best_direction(wide, (4, 6), OPP, (30, 1), 1.5), 'left')
 
-    def test_falls_back_to_a_body_shot_if_head_shot_is_missing(self):
-        shooter = Shooter()
+    def test_head_shot_wins_a_tie(self):
         wide = Board.from_string(board_str(rows_with_two_lines_of_fire()))
-        with patch.object(Shooter, 'worth_it', side_effect=[False, True]):
-            self.assertEqual(
-                shooter.best_direction(wide, (4, 6), OPP, 30, 1.5), 'left')
+        with patch.object(Shooter, 'swing', return_value=9000):
+            self.assertEqual(Shooter().best_direction(
+                wide, (4, 6), OPP, (30, 1), 1.5), 'up')
 
     def test_no_shot_when_none_pays(self):
         wide = Board.from_string(board_str(rows_with_two_lines_of_fire()))
         self.assertIsNone(
-            Shooter().best_direction(wide, (4, 6), OPP, 1, 1.5))
+            Shooter().best_direction(wide, (4, 6), OPP, (1, 1), 1.5))
+
+    def test_no_shot_when_there_is_no_line_of_fire(self):
+        self.assertIsNone(
+            Shooter().best_direction(board(), (11, 0), OPP, (30, 1), 1.5))
 
 
 class TestWhenBehind(unittest.TestCase):
@@ -186,9 +202,9 @@ class TestWhenBehind(unittest.TestCase):
 
     def decide(self, **extra):
         return self.shooter.decide(
-            board(), (0, 8), OPP, state(multiplier=20, **extra))
+            board(), (0, 8), OPP, state(multiplier=15, **extra))
 
-    def test_even_game_does_not_pay_with_multiplier_20(self):
+    def test_even_game_does_not_pay_with_multiplier_15(self):
         self.assertIsNone(self.decide())
 
     def test_behind_game_accepts_a_smaller_return(self):

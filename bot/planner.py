@@ -9,6 +9,7 @@ from bot.constants import (
     MULTIPLIER_ACCUMULATION_CAP, MULTIPLIER_BUDGET_FACTOR,
     MULTIPLIER_CHAR, MULTIPLIER_PICKUP_POINTS, PATH_SAFETY_DEPTH,
     TAIL_FOOD, TAIL_FOOD_DETOUR_MAX, TERRITORY_TOLERANCE, WALL_CHAR,
+    WRONG_STEP_COST,
 )
 
 
@@ -49,7 +50,7 @@ class MovePlanner:
     """
 
     def __init__(self, board, head, own, opp, target_digit,
-                 own_multiplier=1, remaining_moves=None):
+                 own_multiplier=1, remaining_moves=None, own_score=0):
         """Prepara los conjuntos de celdas bloqueadas y las longitudes."""
         self.board = board
         self.head = head
@@ -58,6 +59,7 @@ class MovePlanner:
         self.target_char = str(target_digit)
         self.own_multiplier = own_multiplier
         self.remaining_moves = remaining_moves
+        self.own_score = own_score
         wrong_digits = DIGIT_CHARS - {self.target_char}
         self.blocked = ({own.body, opp.body, opp.head, WALL_CHAR,
                          DANGER_CHAR} | wrong_digits)
@@ -124,7 +126,18 @@ class MovePlanner:
         area = self.board.flood_fill(
             end, self.lookahead_blocked, cap=self.own_length + 1,
             extra=set(passed))
-        return area >= self.own_length
+        return area >= self.own_length and self._room_before_rival(path)
+
+    def _room_before_rival(self, path):
+        """True si tras el primer paso quedan celdas que ganamos al rival.
+
+        Evita meterse en un pasillo que el rival puede cerrar: el área
+        que alcanzamos antes que él tiene que alcanzar para nuestro largo.
+        """
+        if not self.opp_head or not path:
+            return True
+        first = self._step_cell(path[0])
+        return self.step_territory(first) >= self.own_length
 
     # --- alcanzar una celda con un carácter concreto (X o cola) ---------
 
@@ -340,13 +353,23 @@ class MovePlanner:
         return min(near)[1], None
 
     def _resort_cost(self, char):
-        """Costo aproximado de pisar ``char`` (menor es mejor)."""
-        fixed = {self.own.body: 5, self.opp.body: 5, WALL_CHAR: 4,
-                 self.own.head: 3, self.opp.head: 3, DANGER_CHAR: 2,
+        """Puntos que cuesta pisar ``char`` (menor es mejor).
+
+        Un choque contra una serpiente deja el puntaje en 0 (la primera
+        vez) y además se pierde largo: cuesta tu puntaje más 500. La zona
+        de una bomba deja el puntaje en 0 pero el movimiento se hace. La
+        pared y un dígito incorrecto cuestan solo 500.
+        """
+        wipe = max(self.own_score, WRONG_STEP_COST)
+        fixed = {self.own.body: wipe + WRONG_STEP_COST + 1,
+                 self.opp.body: wipe + WRONG_STEP_COST + 1,
+                 self.own.head: wipe + WRONG_STEP_COST,
+                 self.opp.head: wipe + WRONG_STEP_COST,
+                 DANGER_CHAR: wipe, WALL_CHAR: WRONG_STEP_COST,
                  self.target_char: 0}
         if char in fixed:
             return fixed[char]
-        return 1 if char in DIGIT_CHARS else 0
+        return WRONG_STEP_COST if char in DIGIT_CHARS else 0
 
     def _resort_options(self):
         """Pares ``(costo, -espacio, direccion)`` de los pasos legales."""

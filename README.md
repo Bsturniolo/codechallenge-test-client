@@ -100,7 +100,7 @@ su cabeza. Solo dispara si (1) la línea de tiro pega, (2) después de pagar
 `SHOT_COST` (5000) quedan al menos `SHOT_MIN_SCORE_LEFT` puntos, (3) quedan
 40 o más movimientos propios, (4) no vamos ganando por más de
 `SHOT_LEAD_LIMIT`, (5) lo que se espera recuperar
-(`celdas * 100 * multiplicador * SHOT_RECOVERY_SHARE`) es al menos
+(celdas que llegamos a comer antes que el rival, menos las que come él) es al menos
 `SHOT_MIN_RETURN` veces el costo y (6) no superó el máximo de disparos de
 la partida (`MAX_SHOTS_PER_GAME = 1`). Si el rival nos lleva por
 `SHOT_BEHIND_GAP` o más, juega más agresivo: hasta
