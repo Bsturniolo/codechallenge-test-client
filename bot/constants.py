@@ -124,3 +124,6 @@ SHOT_LEAD_LIMIT = 20000
 # Lo que cuesta pisar una pared '#' o un dígito incorrecto (el movimiento
 # de pared no se hace, el de dígito sí). Sirve para comparar con un choque.
 WRONG_STEP_COST = 500
+
+# Desvío máximo (pasos de más) para levantar una X yendo hacia el dígito.
+VIA_X_MAX_DETOUR = 2

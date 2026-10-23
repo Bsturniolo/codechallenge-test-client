@@ -600,3 +600,130 @@ class TestRoomBeforeRival(unittest.TestCase):
         with patch.object(MovePlanner, 'step_territory', return_value=1):
             self.assertFalse(planner._room_before_rival(['up']))
             self.assertFalse(planner.is_safe_path(['up']))
+
+
+class TestViaMultiplier(unittest.TestCase):
+    """Levantar una X que queda casi de camino al dígito."""
+
+    def grid(self, x_col=3, x_row=0):
+        grid = empty(3, 10)
+        grid[1][0] = 'A'
+        grid[1][6] = '1'
+        grid[x_row][x_col] = 'X'
+        return grid
+
+    def test_takes_an_x_that_costs_two_extra_steps(self):
+        found = planner_for(self.grid())._via_multiplier()
+        self.assertEqual(found[1], (0, 3))
+
+    def test_ignores_an_x_that_is_far_from_the_way(self):
+        grid = self.grid(x_col=3, x_row=0)
+        grid[0][3] = ' '
+        grid[2][9] = 'X'
+        self.assertIsNone(planner_for(grid)._via_multiplier())
+
+    def test_ignores_it_when_the_multiplier_is_already_high(self):
+        planner = planner_for(self.grid(), own_multiplier=16)
+        self.assertIsNone(planner._via_multiplier())
+
+    def test_nothing_without_a_reachable_digit(self):
+        grid = self.grid()
+        grid[1][6] = ' '
+        self.assertIsNone(planner_for(grid)._via_multiplier())
+
+    def test_skips_an_x_the_rival_reaches_first(self):
+        grid = self.grid()
+        grid[0][4] = 'B'
+        self.assertIsNone(planner_for(grid)._via_multiplier())
+
+    def test_skips_an_x_with_a_head_on_risk(self):
+        grid = self.grid()
+        grid[0][4] = 'B'
+        grid[2][4] = 'b'
+        grid[2][5] = 'b'
+        self.assertIsNone(planner_for(grid)._via_multiplier())
+
+    def test_choose_uses_it_when_the_digit_beats_the_x(self):
+        planner = planner_for(self.grid(), remaining_moves=40)
+        with patch.object(MovePlanner, '_accumulate', return_value=None):
+            self.assertEqual(planner.choose()[1], (0, 3))
+
+
+class TestLosingRace(unittest.TestCase):
+    """Si el rival se come el dígito primero, nos posicionamos."""
+
+    def grid(self, rival_col=8):
+        grid = empty(3, 10)
+        grid[1][0] = 'A'
+        grid[1][6] = '1'
+        grid[1][rival_col] = 'B'
+        grid[2][2] = '2'
+        return grid
+
+    def test_detects_a_lost_race(self):
+        self.assertTrue(planner_for(self.grid())._losing_race())
+
+    def test_not_losing_when_we_are_closer(self):
+        grid = self.grid(rival_col=9)
+        grid[1][6] = ' '
+        grid[1][2] = '1'
+        self.assertFalse(planner_for(grid)._losing_race())
+
+    def test_not_losing_without_a_reachable_digit(self):
+        grid = self.grid()
+        grid[1][6] = ' '
+        self.assertFalse(planner_for(grid)._losing_race())
+
+    def test_stages_toward_the_next_digit(self):
+        planner = planner_for(self.grid())
+        direction, target = planner.choose()
+        self.assertIn(direction, ('down', 'right'))
+        self.assertIsNone(target)
+
+    def test_takes_a_free_bonus_instead_of_staging(self):
+        grid = self.grid()
+        grid[0][1] = 'X'
+        found = planner_for(grid)._when_losing_race()
+        self.assertEqual(found[1], (0, 1))
+
+    def test_no_staging_without_a_next_digit(self):
+        grid = self.grid()
+        grid[2][2] = ' '
+        planner = planner_for(grid)
+        self.assertIsNone(planner._stage_next())
+        self.assertIsNone(planner._when_losing_race())
+
+    def test_no_staging_when_boxed_in(self):
+        grid = empty(1, 4)
+        grid[0][0] = 'A'
+        grid[0][1] = '5'
+        self.assertIsNone(planner_for(grid)._stage_next())
+
+    def test_nothing_to_do_when_not_losing(self):
+        grid = empty(3, 6)
+        grid[1][0] = 'A'
+        grid[1][3] = '1'
+        self.assertIsNone(planner_for(grid)._when_losing_race())
+
+
+class TestSafeWalkTo(unittest.TestCase):
+    """Camino a una celda: solo si es seguro, sin riesgo y libre."""
+
+    def planner(self):
+        grid = empty(3, 6)
+        grid[1][0] = 'A'
+        grid[1][3] = 'X'
+        return planner_for(grid)
+
+    def test_returns_the_path_when_everything_is_fine(self):
+        self.assertEqual(self.planner()._safe_walk_to((1, 3)), ['right'] * 3)
+
+    def test_none_when_the_path_is_not_safe(self):
+        planner = self.planner()
+        with patch.object(MovePlanner, 'is_safe_path', return_value=False):
+            self.assertIsNone(planner._safe_walk_to((1, 3)))
+
+    def test_none_when_the_first_step_risks_a_head_on(self):
+        planner = self.planner()
+        with patch.object(MovePlanner, 'risky_head_on', return_value=True):
+            self.assertIsNone(planner._safe_walk_to((1, 3)))
