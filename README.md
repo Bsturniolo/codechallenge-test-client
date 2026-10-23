@@ -80,7 +80,9 @@ da una jugada:
    todas. `RaceModel` simula las próximas `RACE_HORIZON` (3) carreras con
    distancias reales (gana quien llega primero, empate para el rival, y
    el que pierde aprovecha para acercarse al dígito siguiente) y elige
-   entre disputar cada copia o dejar el dígito y posicionarse. En las
+   entre disputar cada copia o dejar el dígito y posicionarse (solo lo deja
+   si el rival llega con `RACE_SKIP_MARGIN` (3) pasos o más de ventaja; una
+   carrera pareja siempre se disputa). En las
    partidas grabadas acierta quién gana el dígito actual el 87 % de las
    veces y el siguiente el 75 %. Además ninguna `X` se levanta si nos
    hace perder un dígito que íbamos ganando.

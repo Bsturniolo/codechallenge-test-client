@@ -13,7 +13,8 @@ y posicionarse para el que sigue.
 """
 
 from bot.constants import (
-    DANGER_CHAR, DIGIT_CHARS, RACE_DISCOUNT, RACE_HORIZON, WALL_CHAR)
+    DANGER_CHAR, DIGIT_CHARS, RACE_DISCOUNT, RACE_HORIZON, RACE_SKIP_MARGIN,
+    WALL_CHAR)
 
 INF = float('inf')
 
@@ -125,16 +126,29 @@ class RaceModel:
             weight *= RACE_DISCOUNT
         return total
 
+    def first_margin(self):
+        """Pasos que el rival tarda de más que nosotros en el dígito actual.
+
+        Positivo si llegamos antes; ``-INF`` si no llegamos a ninguna copia.
+        """
+        digit = self.digits[0]
+        ours, theirs = (
+            self.fastest(self.arrivals(who, (self.start[who], 0), digit, 0))
+            for who in ('us', 'rival'))
+        return theirs[0] - ours[0] if ours[0] < INF else -INF
+
     def best(self):
         """``('chase', copia)``, ``('skip', None)`` o ``None`` si no hay datos.
 
-        Compara disputar cada copia alcanzable contra dejar el dígito. Con
-        el mismo valor se prefiere disputar la copia más cercana.
+        Compara disputar cada copia alcanzable contra dejar el dígito. Solo
+        se deja el dígito si el rival nos saca ``RACE_SKIP_MARGIN`` pasos o
+        más: una carrera pareja se disputa siempre.
         """
         if not self.digits:
             return None
         reach = self.distances('us', self.start['us'], self.digits[0])
         options = [(self.value(copy), -steps, ('chase', copy))
                    for copy, steps in reach.items()]
-        options.append((self.value(None), -INF, ('skip', None)))
+        if not options or self.first_margin() <= -RACE_SKIP_MARGIN:
+            options.append((self.value(None), -INF, ('skip', None)))
         return max(options, key=lambda o: o[:2])[2]
