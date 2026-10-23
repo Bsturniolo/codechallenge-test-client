@@ -135,3 +135,7 @@ VIA_X_SLACK_CAP = 6
 # cuánto pesan los más lejanos (los más lejanos son menos confiables).
 RACE_HORIZON = 3
 RACE_DISCOUNT = 0.8
+
+# Solo se deja un dígito (para posicionarse) si el rival llega con al menos
+# estos pasos de ventaja; con una carrera pareja se la disputa.
+RACE_SKIP_MARGIN = 3

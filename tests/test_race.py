@@ -108,15 +108,40 @@ class TestBest(unittest.TestCase):
         grid = row(c0='1', c19='2', c10='A', c2='B')
         self.assertEqual(model(grid).best(), ('skip', None))
 
-    def test_skips_a_won_digit_when_it_costs_the_next_one(self):
+    def test_a_won_digit_is_never_skipped(self):
         grid = row(c0='1', c19='2', c4='A', c15='B')
+        self.assertEqual(model(grid).best(), ('chase', (1, 0)))
+
+    def test_an_even_race_is_disputed(self):
+        grid = row(c0='1', c19='2', c4='A')
+        grid[0][2] = 'B'
+        self.assertEqual(model(grid).best()[0], 'chase')
+
+    def test_first_margin_counts_steps_between_the_arrivals(self):
+        grid = row(c0='1', c4='A', c15='B')
+        self.assertEqual(model(grid).first_margin(), 13)
+
+    def test_first_margin_without_a_reachable_copy(self):
+        grid = row(c0='1', c4='A', c9='B')
+        for line in grid:
+            line[2] = '#'
+        self.assertEqual(model(grid).first_margin(), -INF)
+
+    def test_skip_is_the_only_option_without_a_reachable_copy(self):
+        grid = row(c0='1', c4='A', c9='B')
+        for line in grid:
+            line[2] = '#'
         self.assertEqual(model(grid).best(), ('skip', None))
 
     def test_nothing_without_digits(self):
         self.assertIsNone(model(row(c3='A', c9='B')).best())
 
-    def test_value_is_computed_for_every_option(self):
-        grid = row(c0='1', c6='1', c3='A', c9='B')
+    def test_skip_is_only_evaluated_when_the_rival_is_far_ahead(self):
+        close = row(c0='1', c6='1', c3='A', c9='B')
         with patch.object(RaceModel, 'value', return_value=0.0) as value:
-            model(grid).best()
+            model(close).best()
+        self.assertEqual(value.call_count, 2)
+        far = row(c0='1', c19='1', c10='A', c1='B')
+        with patch.object(RaceModel, 'value', return_value=0.0) as value:
+            model(far).best()
         self.assertEqual(value.call_count, 3)
