@@ -762,3 +762,93 @@ class TestRaceSlack(unittest.TestCase):
         with patch.object(MovePlanner, '_race_slack', return_value=2):
             self.assertEqual(planner._x_detour_limit(), 2)
             self.assertIsNone(planner._via_multiplier())
+
+
+class TestRaceMove(unittest.TestCase):
+    """El modelo de carreras decide si disputar o posicionarse."""
+
+    def grid(self, **cells):
+        grid = empty(3, 20)
+        for key, char in cells.items():
+            grid[1][int(key[1:])] = char
+        return grid
+
+    def test_no_plan_without_a_rival(self):
+        grid = self.grid(c4='A', c0='1')
+        planner = planner_for(grid)
+        self.assertIsNone(planner._race_choice())
+        self.assertIsNone(planner._race_move())
+
+    def test_chases_the_digit_when_we_are_closer(self):
+        grid = self.grid(c4='A', c0='1', c1='2', c15='B')
+        direction, target = planner_for(grid)._race_move()
+        self.assertIn(direction, ('left', 'up', 'down'))
+        self.assertEqual(target, (1, 0))
+
+    def test_passes_the_moves_left_to_the_model(self):
+        grid = self.grid(c4='A', c0='1', c1='2', c15='B')
+        planner = planner_for(grid, remaining_moves=80)
+        self.assertEqual(planner._race_choice(), ('chase', (1, 0)))
+
+    def test_gets_ready_for_the_next_digit_when_skipping(self):
+        grid = self.grid(c10='A', c0='1', c19='2', c2='B')
+        direction, target = planner_for(grid)._race_move()
+        self.assertEqual(direction, 'right')
+        self.assertIsNone(target)
+
+    def test_skip_prefers_a_free_bonus(self):
+        grid = self.grid(c10='A', c0='1', c19='2', c2='B', c11='X')
+        self.assertEqual(planner_for(grid)._race_move()[1], (1, 11))
+
+    def test_unsafe_walk_gives_no_move(self):
+        grid = self.grid(c4='A', c0='1', c1='2', c15='B')
+        planner = planner_for(grid)
+        with patch.object(MovePlanner, 'is_safe_path', return_value=False):
+            self.assertIsNone(planner._walk_to_copy((1, 0)))
+
+    def test_head_on_risk_gives_no_move(self):
+        grid = self.grid(c4='A', c0='1', c1='2', c15='B')
+        planner = planner_for(grid)
+        with patch.object(MovePlanner, 'risky_head_on', return_value=True):
+            self.assertIsNone(planner._walk_to_copy((1, 0)))
+
+    def test_choose_follows_the_race_plan(self):
+        grid = self.grid(c4='A', c0='1', c1='2', c15='B')
+        self.assertEqual(planner_for(grid).choose()[1], (1, 0))
+
+
+class TestXLosesRace(unittest.TestCase):
+    """No ir por una X si eso nos hace perder un dígito que ganábamos."""
+
+    def grid(self, x_cell):
+        grid = empty(3, 12)
+        grid[1][0] = 'A'
+        grid[1][4] = '1'
+        grid[1][9] = 'B'
+        grid[x_cell[0]][x_cell[1]] = 'X'
+        return grid
+
+    def test_a_detour_that_loses_the_digit_is_rejected(self):
+        planner = planner_for(self.grid((0, 0)))
+        self.assertTrue(planner._x_loses_race(['up']))
+        self.assertIsNone(planner._accumulate())
+
+    def test_an_x_on_the_way_is_fine(self):
+        planner = planner_for(self.grid((1, 2)))
+        self.assertFalse(planner._x_loses_race(['right', 'right']))
+
+    def test_no_rival_means_no_race(self):
+        grid = self.grid((0, 0))
+        grid[1][9] = ' '
+        self.assertFalse(planner_for(grid)._x_loses_race(['up']))
+
+    def test_a_race_we_already_lose_does_not_matter(self):
+        grid = self.grid((0, 0))
+        grid[1][9] = ' '
+        grid[1][5] = 'B'
+        self.assertFalse(planner_for(grid)._x_loses_race(['up']))
+
+    def test_via_multiplier_respects_the_race(self):
+        planner = planner_for(self.grid((0, 1)))
+        with patch.object(MovePlanner, '_x_loses_race', return_value=True):
+            self.assertIsNone(planner._via_multiplier())

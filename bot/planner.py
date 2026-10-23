@@ -12,6 +12,7 @@ from bot.constants import (
     VIA_X_SLACK_CAP, WALL_CHAR,
     WRONG_STEP_COST,
 )
+from bot.race import RaceModel
 
 
 @dataclass(frozen=True)
@@ -189,7 +190,32 @@ class MovePlanner:
         path = self._reachable_path(MULTIPLIER_CHAR, budget)
         if path is None or self._digit_beats_x(len(path)):
             return None
+        if self._x_loses_race(path):
+            return None
         return self.try_reach_char(MULTIPLIER_CHAR, budget)
+
+    def _rival_digit_distance(self):
+        """Pasos del rival hasta la copia más cercana del dígito."""
+        found = [self.opp_distance_to(cell)
+                 for cell in self.board.positions(self.target_char)]
+        found = [steps for steps in found if steps is not None]
+        return min(found) if found else None
+
+    def _race_times(self):
+        """``(rival, nosotros)``: pasos al dígito, o ``None`` si no se sabe."""
+        rival = self._rival_digit_distance() if self.opp_head else None
+        direct = self._digit_distance(self.head)
+        if rival is None or direct is None:
+            return None
+        return rival, direct
+
+    def _x_loses_race(self, path):
+        """True si pasar por la X nos hace perder un dígito que ganábamos."""
+        times = self._race_times()
+        if times is None or times[1] >= times[0]:
+            return False
+        via = self._digit_distance(self.board.walk(self.head, path)[-1])
+        return via is None or len(path) + via >= times[0]
 
     def _digit_beats_x(self, x_len):
         """True si el dígito objetivo rinde más puntos por paso que la ``X``.
@@ -290,7 +316,9 @@ class MovePlanner:
         """
         cell = self._x_on_the_way() if self._accumulating() else None
         path = self._safe_walk_to(cell) if cell else None
-        return (path[0], cell) if path else None
+        if path and not self._x_loses_race(path):
+            return path[0], cell
+        return None
 
     def _first_reachable(self, chars, max_len=None):
         """Primer ``try_reach_char`` exitoso entre ``chars``."""
@@ -392,6 +420,36 @@ class MovePlanner:
         """
         best = self._best_step(self._next_distance)
         return None if best is None or best[0] == float('inf') else best[1]
+
+    def _race_choice(self):
+        """Plan de ``RaceModel``: chase/skip o ``None`` si no hay datos."""
+        if not self.opp_head:
+            return None
+        own_left = None
+        if self.remaining_moves is not None:
+            own_left = self.remaining_moves // 2
+        model = RaceModel(self.board, self.head, self.opp_head, self.own,
+                          self.opp, self.target_char, own_left)
+        return model.best()
+
+    def _walk_to_copy(self, cell):
+        """Primer paso seguro hacia la copia ``cell`` del dígito objetivo."""
+        path = self.board.path_to_cell(self.head, self.blocked, cell)
+        if not path or not self.is_safe_path(path):
+            return None
+        if self.risky_head_on(self._step_cell(path[0])):
+            return None
+        return path[0], cell
+
+    def _race_move(self):
+        """Seguir el plan del modelo de carreras: disputar o posicionarse."""
+        choice = self._race_choice()
+        if choice is None:
+            return None
+        kind, cell = choice
+        if kind == 'skip':
+            return self._opportunistic_bonus() or self._stage_next()
+        return self._walk_to_copy(cell)
 
     def _when_losing_race(self):
         """Si el dígito está perdido: bonus cercano o posicionarse."""
@@ -506,7 +564,7 @@ class MovePlanner:
         La dirección es ``None`` si no existe ningún movimiento posible.
         """
         steps = (self._accumulate, self._grab_tail, self._via_multiplier,
-                 self._when_losing_race, self._pursue_digit,
+                 self._race_move, self._when_losing_race, self._pursue_digit,
                  self._opportunistic_bonus, self._territory_move)
         for step in steps:
             result = step()
